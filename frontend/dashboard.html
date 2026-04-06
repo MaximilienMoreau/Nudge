@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Nudge — Dashboard</title>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body>
+
+<!-- Toast container for real-time notifications -->
+<div id="toast-container"></div>
+
+<div class="layout">
+
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">📨</div>
+      <span>Nudge</span>
+    </div>
+
+    <nav class="sidebar-nav">
+      <div class="nav-item active" onclick="showView('emails')">
+        <span>📊</span> Dashboard
+      </div>
+      <div class="nav-item" onclick="showView('track')">
+        <span>➕</span> Track Email
+      </div>
+    </nav>
+
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="user-avatar" id="user-avatar">U</div>
+        <div class="user-meta">
+          <div class="name" id="user-email-display">—</div>
+          <div class="role">Pro Plan</div>
+        </div>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.5rem" onclick="logout()">
+        Sign Out
+      </button>
+    </div>
+  </aside>
+
+  <!-- ── Main ──────────────────────────────────────────────── -->
+  <div class="main">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div>
+        <div class="topbar-title" id="view-title">Email Dashboard</div>
+      </div>
+      <div class="topbar-actions">
+        <!-- WebSocket connection indicator -->
+        <div style="display:flex;align-items:center;gap:.4rem;color:var(--muted);font-size:.8rem">
+          <span class="ws-dot" id="ws-dot"></span>
+          <span id="ws-label">Connecting…</span>
+        </div>
+        <button class="btn btn-primary btn-sm" onclick="openNewEmailModal()">
+          + Track Email
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Dashboard view ──────────────────────────────────── -->
+    <div class="content" id="view-emails">
+
+      <!-- Stats row -->
+      <div class="stats-row" id="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Total Tracked</div>
+          <div class="stat-value purple" id="stat-total">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Opened</div>
+          <div class="stat-value green" id="stat-opened">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Hot Leads</div>
+          <div class="stat-value yellow" id="stat-hot">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg Score</div>
+          <div class="stat-value" id="stat-avg-score">—</div>
+        </div>
+      </div>
+
+      <!-- Emails table -->
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Tracked Emails</span>
+          <button class="btn btn-ghost btn-sm" onclick="loadEmails()">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>Recipient</th>
+                <th>Sent</th>
+                <th>Status</th>
+                <th>Score</th>
+                <th>Last Opened</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="emails-tbody">
+              <tr>
+                <td colspan="7">
+                  <div class="empty-state">
+                    <div class="empty-icon">📬</div>
+                    <h3>Loading emails…</h3>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Track Email view ─────────────────────────────────── -->
+    <div class="content" id="view-track" style="display:none">
+      <div class="card" style="max-width:580px">
+        <div class="card-header">
+          <span class="card-title">Track a New Email</span>
+        </div>
+        <div class="card-body">
+          <p style="color:var(--muted);font-size:.875rem;margin-bottom:1.25rem">
+            Register an outgoing email. Copy the tracking pixel URL and paste it into
+            your email body as an invisible image.
+          </p>
+          <form id="track-form" onsubmit="handleTrackEmail(event)">
+            <div class="form-group">
+              <label>Subject</label>
+              <input type="text" id="t-subject" placeholder="Your email subject" required/>
+            </div>
+            <div class="form-group">
+              <label>Recipient Email</label>
+              <input type="email" id="t-recipient" placeholder="recipient@company.com" required/>
+            </div>
+            <div class="form-group">
+              <label>Email Body (optional — used for AI follow-ups)</label>
+              <textarea id="t-content" placeholder="Paste your email content here…"></textarea>
+            </div>
+            <button type="submit" class="btn btn-primary" id="track-btn">
+              Generate Tracking Pixel
+            </button>
+          </form>
+
+          <!-- Result shown after creation -->
+          <div id="track-result" style="display:none; margin-top:1.5rem">
+            <div style="color:var(--success);font-weight:600;margin-bottom:.5rem">
+              ✅ Email registered for tracking!
+            </div>
+            <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">
+              Tracking Pixel URL — embed this in your email as an image:
+            </div>
+            <div class="pixel-url-box" id="pixel-url"></div>
+            <div style="margin-top:.75rem;color:var(--muted);font-size:.8rem">
+              HTML to paste in email body:
+            </div>
+            <div class="pixel-url-box" id="pixel-html"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── New Email Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="new-email-modal" style="display:none" onclick="closeModalOnBg(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Track New Email</h3>
+      <button class="modal-close" onclick="closeNewEmailModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="modal-track-form" onsubmit="handleModalTrack(event)">
+        <div class="form-group">
+          <label>Subject</label>
+          <input type="text" id="m-subject" placeholder="Email subject" required/>
+        </div>
+        <div class="form-group">
+          <label>Recipient Email</label>
+          <input type="email" id="m-recipient" placeholder="recipient@company.com" required/>
+        </div>
+        <div class="form-group">
+          <label>Email Body</label>
+          <textarea id="m-content" placeholder="Paste your email content here (used for AI follow-ups)…"></textarea>
+        </div>
+        <div id="modal-result" style="display:none">
+          <div style="color:var(--success);font-weight:600;margin-bottom:.5rem">✅ Tracking pixel created!</div>
+          <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">Pixel URL:</div>
+          <div class="pixel-url-box" id="modal-pixel-url"></div>
+          <div style="margin-top:.5rem;color:var(--muted);font-size:.8rem">Embed HTML:</div>
+          <div class="pixel-url-box" id="modal-pixel-html"></div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeNewEmailModal()">Close</button>
+      <button type="submit" form="modal-track-form" class="btn btn-primary" id="modal-track-btn">
+        Create Pixel
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Follow-Up Modal ──────────────────────────────────────── -->
+<div class="modal-overlay" id="followup-modal" style="display:none" onclick="closeModalOnBg(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>🤖 AI Follow-Up Generator</h3>
+      <button class="modal-close" onclick="closeFollowUpModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="followup-context" style="background:var(--bg);border-radius:8px;padding:.75rem;margin-bottom:1rem;font-size:.85rem">
+        Loading context…
+      </div>
+      <button class="btn btn-primary" onclick="generateFollowUp()" id="gen-btn" style="width:100%">
+        Generate Follow-Up
+      </button>
+
+      <div id="followup-result" style="display:none;margin-top:1rem">
+        <div class="ai-result">
+          <div class="ai-result-label">Suggested Subject</div>
+          <div style="font-weight:600;margin-bottom:1rem" id="followup-subject"></div>
+          <div class="ai-result-label">Follow-Up Email</div>
+          <div class="ai-result-text" id="followup-text"></div>
+        </div>
+        <div style="display:flex;gap:.5rem;margin-top:.75rem">
+          <button class="btn btn-secondary btn-sm" onclick="copyFollowUp()">📋 Copy</button>
+          <button class="btn btn-ghost btn-sm" onclick="generateFollowUp()">↺ Regenerate</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="js/dashboard.js"></script>
+<script src="js/websocket.js"></script>
+</body>
+</html>
