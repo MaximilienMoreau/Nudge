@@ -4,6 +4,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.nudge.dto.FollowUpRequest;
 import com.nudge.dto.FollowUpResponse;
+import com.nudge.dto.SendTimeResponse;
+import com.nudge.model.EventType;
+import com.nudge.model.TrackingEvent;
+import com.nudge.repository.TrackingEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -13,8 +17,13 @@ import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestTemplate;
 
+import java.time.DayOfWeek;
+import java.time.format.TextStyle;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Generates AI-powered follow-up emails using the OpenAI Chat Completions API.
@@ -34,8 +43,13 @@ public class AIService {
     @Value("${openai.model}")
     private String model;
 
+    private final TrackingEventRepository eventRepo;
     private final RestTemplate restTemplate = new RestTemplate();
     private final ObjectMapper objectMapper = new ObjectMapper();
+
+    public AIService(TrackingEventRepository eventRepo) {
+        this.eventRepo = eventRepo;
+    }
 
     /**
      * Generate a follow-up email given context about the original email and engagement.
@@ -155,5 +169,72 @@ public class AIService {
                 request.getSubject()
         );
         return new FollowUpResponse(text, "Re: " + request.getSubject());
+    }
+
+    // ── Send-time optimization ─────────────────────────────────────
+
+    /**
+     * Analyse this user's historical open events and return the day × hour
+     * combination with the highest open count as the recommended send time.
+     *
+     * No AI call is needed — pure data analysis keeps it fast and free.
+     *
+     * @param userEmail the authenticated user's email address
+     * @return send-time recommendation, or a no-data response if insufficient history
+     */
+    public SendTimeResponse suggestSendTime(String userEmail) {
+        List<TrackingEvent> opens = eventRepo.findByEmail_User_EmailAndType(userEmail, EventType.OPEN);
+
+        if (opens.isEmpty()) {
+            return new SendTimeResponse(
+                    "No data yet — send more tracked emails to unlock insights",
+                    null, null, "No open events recorded", false
+            );
+        }
+
+        // Group events by day-of-week (1=Mon … 7=Sun) and hour-of-day (0–23)
+        Map<Integer, Map<Integer, Long>> matrix = opens.stream().collect(
+                Collectors.groupingBy(
+                        e -> e.getTimestamp().getDayOfWeek().getValue(),
+                        Collectors.groupingBy(
+                                e -> e.getTimestamp().getHour(),
+                                Collectors.counting()
+                        )
+                )
+        );
+
+        // Find the day × hour cell with the maximum count
+        int[] bestDay  = {1};
+        int[] bestHour = {9};
+        long[] best    = {0};
+
+        matrix.forEach((day, hourMap) ->
+                hourMap.forEach((hour, count) -> {
+                    if (count > best[0]) {
+                        best[0]     = count;
+                        bestDay[0]  = day;
+                        bestHour[0] = hour;
+                    }
+                })
+        );
+
+        String dayName   = DayOfWeek.of(bestDay[0]).getDisplayName(TextStyle.FULL, Locale.ENGLISH);
+        String hourLabel = formatHour(bestHour[0]);
+        String suggestion = dayName + " at " + hourLabel;
+
+        return new SendTimeResponse(
+                suggestion,
+                dayName,
+                hourLabel,
+                "Based on " + opens.size() + " open event" + (opens.size() == 1 ? "" : "s"),
+                true
+        );
+    }
+
+    private static String formatHour(int hour) {
+        if (hour == 0)  return "12:00 AM";
+        if (hour < 12)  return hour + ":00 AM";
+        if (hour == 12) return "12:00 PM";
+        return (hour - 12) + ":00 PM";
     }
 }

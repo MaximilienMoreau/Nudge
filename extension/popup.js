@@ -1,29 +1,31 @@
 /**
  * popup.js — Nudge Extension Popup
  *
- * Handles login/logout within the extension.
- * Credentials are stored in chrome.storage.local so background.js can use them.
+ * On open:
+ *  1. Checks auth status
+ *  2. Detects the platform of the active tab (via background.js)
+ *  3. Shows the right tip: inline-injection tip vs. dashboard fallback
  */
 
 const API = 'http://localhost:8080';
 
-// ── Init ──────────────────────────────────────────────────────
-
-document.addEventListener('DOMContentLoaded', () => {
-  checkAuthStatus();
+document.addEventListener('DOMContentLoaded', async () => {
+  await Promise.all([
+    checkAuthStatus(),
+    detectPlatform()
+  ]);
 });
+
+// ── Auth ──────────────────────────────────────────────────────
 
 async function checkAuthStatus() {
   const response = await chrome.runtime.sendMessage({ type: 'GET_AUTH_STATUS' });
-
   if (response.loggedIn) {
     showLoggedInView(response.email);
   } else {
     showLoginView();
   }
 }
-
-// ── Login ─────────────────────────────────────────────────────
 
 async function login() {
   const email    = document.getElementById('email').value.trim();
@@ -32,50 +34,58 @@ async function login() {
   const btn      = document.getElementById('login-btn');
 
   errEl.classList.add('hidden');
-
-  if (!email || !password) {
-    showError('Please enter your email and password.');
-    return;
-  }
+  if (!email || !password) { showError('Please enter your email and password.'); return; }
 
   btn.textContent = 'Signing in…';
-  btn.disabled = true;
+  btn.disabled    = true;
 
   try {
-    const res = await fetch(`${API}/api/auth/login`, {
+    const res  = await fetch(`${API}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })
     });
-
     const data = await res.json();
 
-    if (!res.ok) {
-      showError(data.error || 'Login failed');
-      return;
-    }
+    if (!res.ok) { showError(data.error || 'Login failed'); return; }
 
-    // Store credentials in extension storage
-    await chrome.storage.local.set({
-      nudge_token: data.token,
-      nudge_email: data.email
-    });
-
+    await chrome.storage.local.set({ nudge_token: data.token, nudge_email: data.email });
     showLoggedInView(data.email);
-
-  } catch (e) {
+  } catch {
     showError('Cannot reach Nudge backend. Is it running?');
   } finally {
     btn.textContent = 'Sign In';
-    btn.disabled = false;
+    btn.disabled    = false;
   }
 }
-
-// ── Logout ────────────────────────────────────────────────────
 
 async function logout() {
   await chrome.runtime.sendMessage({ type: 'LOGOUT' });
   showLoginView();
+}
+
+// ── Platform detection ────────────────────────────────────────
+
+async function detectPlatform() {
+  try {
+    const { platform, supported } = await chrome.runtime.sendMessage({ type: 'GET_PLATFORM_STATUS' });
+    const badge  = document.getElementById('platform-badge');
+    const tipOk  = document.getElementById('tip-supported');
+    const tipFb  = document.getElementById('tip-fallback');
+
+    badge.textContent = platform || 'Unknown';
+    badge.className   = `platform-badge ${supported ? 'platform-supported' : 'platform-unsupported'}`;
+
+    if (supported) {
+      tipOk.classList.remove('hidden');
+      tipFb.classList.add('hidden');
+    } else {
+      tipOk.classList.add('hidden');
+      tipFb.classList.remove('hidden');
+    }
+  } catch {
+    // Non-critical — leave defaults
+  }
 }
 
 // ── UI helpers ────────────────────────────────────────────────

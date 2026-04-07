@@ -1,208 +1,356 @@
 /**
- * content.js — Gmail Compose Window Integration
+ * content.js — Nudge Multi-Platform Email Tracker
  *
- * This script runs in the context of https://mail.google.com.
+ * Supported platforms: Gmail, Outlook Web (live / office / office365)
  *
- * What it does:
- *  1. Watches for Gmail compose windows to open (via MutationObserver)
- *  2. Injects a "Track with Nudge" button into each compose toolbar
- *  3. When the user clicks Send while tracking is active:
- *     - Captures subject, recipient, and body
- *     - Calls the Nudge backend to register the email
- *     - Injects the tracking pixel <img> tag into the email body
+ * Architecture: platform-adapter pattern
+ *   - Each email client has its own adapter with DOM selectors.
+ *   - The Nudge sidebar panel (UI) is shared across all adapters.
+ *   - A MutationObserver continuously watches for new compose windows.
  *
- * Gmail uses a complex dynamic DOM — we watch for compose containers
- * by looking for the [role="dialog"] with a send button inside.
+ * Fallback: when the platform is not supported for injection, the
+ *           extension popup guides users to the web dashboard.
  */
 
-console.log('[Nudge] Content script loaded on Gmail');
+// ── Platform detection ─────────────────────────────────────────
 
-// Track which compose windows we've already injected into
-const injectedComposeWindows = new WeakSet();
+const PLATFORM = (() => {
+  const h = window.location.hostname;
+  if (h === 'mail.google.com')           return 'gmail';
+  if (h.endsWith('outlook.live.com'))    return 'outlook';
+  if (h.endsWith('outlook.office.com'))  return 'outlook';
+  if (h.endsWith('outlook.office365.com')) return 'outlook';
+  return null;
+})();
 
-// ── MutationObserver: watch for compose windows ───────────────
+console.log(`[Nudge] content script — platform: ${PLATFORM ?? 'unsupported'}`);
 
-const observer = new MutationObserver(() => {
-  detectComposeWindows();
-});
+// ── Platform adapters ──────────────────────────────────────────
+//
+// Each adapter must implement:
+//   findComposeWindows() → Array<{ container: Element, sendBtn: Element }>
+//   extractSubject(container)   → string
+//   extractRecipient(container) → string
+//   extractBody(container)      → string
+//   injectPixel(container, url) → void
+//   getSidebarRoot(container)   → Element  (where the panel is appended)
 
-observer.observe(document.body, {
-  childList: true,
-  subtree: true
-});
+const ADAPTERS = {
 
-// Run immediately in case a compose window is already open
-detectComposeWindows();
+  // ── Gmail ────────────────────────────────────────────────────
+  gmail: {
+    findComposeWindows() {
+      const found = [];
+      document.querySelectorAll('[data-tooltip="Send"]').forEach(sendBtn => {
+        const container = sendBtn.closest('div[role="dialog"], .nH.Hd');
+        if (container) found.push({ container, sendBtn });
+      });
+      return found;
+    },
+    extractSubject(c) {
+      return c.querySelector('input[name="subjectbox"]')?.value.trim() ?? '';
+    },
+    extractRecipient(c) {
+      // Recipient chips carry the email in data-hovercard-id
+      const chip = c.querySelector('[data-hovercard-id]');
+      const hoverId = chip?.getAttribute('data-hovercard-id') ?? '';
+      if (hoverId.includes('@')) return hoverId;
 
-/**
- * Find all Gmail compose dialogs and inject Nudge tracking button.
- * Gmail renders compose as [role="dialog"] elements.
- */
-function detectComposeWindows() {
-  // Gmail compose windows contain a send button with data-tooltip="Send"
-  const sendButtons = document.querySelectorAll('[data-tooltip="Send"]');
+      const toInput = c.querySelector('[aria-label="To"], [name="to"]');
+      if (toInput?.value) return toInput.value.trim();
 
-  sendButtons.forEach(sendBtn => {
-    // Find the parent compose container
-    const composeContainer = sendBtn.closest('div[role="dialog"], .nH.Hd');
-    if (!composeContainer) return;
-    if (injectedComposeWindows.has(composeContainer)) return;
+      const toArea = c.querySelector('.vO');
+      if (toArea) {
+        const m = toArea.innerText.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
+        if (m) return m[0];
+      }
+      return '';
+    },
+    extractBody(c) {
+      return c.querySelector('[contenteditable="true"][aria-label]')?.innerText.trim() ?? '';
+    },
+    injectPixel(c, url) {
+      const body = c.querySelector('[contenteditable="true"][aria-label]');
+      if (!body) return;
+      body.querySelector('.nudge-pixel')?.remove();
+      body.appendChild(buildPixelImg(url));
+    },
+    getSidebarRoot(c) {
+      // Append inside the compose bottom bar (send button row)
+      return c.querySelector('.gU.Up, .aDh, .btC') ?? c;
+    }
+  },
 
-    injectedComposeWindows.add(composeContainer);
-    injectNudgeButton(composeContainer, sendBtn);
-  });
+  // ── Outlook Web (live / office / office365) ──────────────────
+  outlook: {
+    findComposeWindows() {
+      const found = [];
+      // Outlook renders a Send button with aria-label "Send" in the compose toolbar
+      document.querySelectorAll(
+        'button[aria-label="Send"], button[title="Send"], button[data-testid="compose-send-button"]'
+      ).forEach(sendBtn => {
+        const container = sendBtn.closest(
+          '[role="dialog"], [class*="compose"], [class*="Compose"], [class*="draftArea"]'
+        );
+        if (container) found.push({ container, sendBtn });
+      });
+      return found;
+    },
+    extractSubject(c) {
+      return (
+        c.querySelector('input[aria-label*="ubject"], input[placeholder*="ubject"]')?.value.trim() ?? ''
+      );
+    },
+    extractRecipient(c) {
+      // Try the visible "To" input
+      const toInput = c.querySelector('[aria-label="To"], input[placeholder*="To"]');
+      if (toInput) {
+        const m = (toInput.value || toInput.innerText || '').match(/[^\s@;]+@[^\s@;]+\.[^\s@;]+/);
+        if (m) return m[0];
+      }
+      // Outlook renders recipients as persona chips inside the "To" well
+      const chips = c.querySelectorAll('[class*="recipientWell"] [title], [class*="Persona"] [data-lpc-hover-target]');
+      for (const chip of chips) {
+        const txt = chip.getAttribute('title') || chip.textContent;
+        const m = txt?.match(/[^\s@;]+@[^\s@;]+\.[^\s@;]+/);
+        if (m) return m[0];
+      }
+      return '';
+    },
+    extractBody(c) {
+      return (
+        c.querySelector('[contenteditable="true"], [role="textbox"]')?.innerText.trim() ?? ''
+      );
+    },
+    injectPixel(c, url) {
+      const body = c.querySelector('[contenteditable="true"], [role="textbox"]');
+      if (!body) return;
+      body.querySelector('.nudge-pixel')?.remove();
+      body.appendChild(buildPixelImg(url));
+    },
+    getSidebarRoot(c) {
+      // Insert into the command/toolbar bar at the bottom of the compose area
+      return (
+        c.querySelector('[class*="commandBar"], [class*="CommandBar"], [class*="toolbar"]') ?? c
+      );
+    }
+  }
+};
+
+// ── Bootstrap ──────────────────────────────────────────────────
+
+const adapter = PLATFORM ? ADAPTERS[PLATFORM] : null;
+
+if (!adapter) {
+  // Signal to background/popup that this tab needs dashboard fallback
+  chrome.runtime.sendMessage({ type: 'PLATFORM_UNSUPPORTED', host: window.location.hostname });
+} else {
+  const seen = new WeakSet();
+
+  function scan() {
+    adapter.findComposeWindows().forEach(({ container, sendBtn }) => {
+      if (seen.has(container)) return;
+      seen.add(container);
+      mountSidebar(container, sendBtn);
+    });
+  }
+
+  new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+  scan();
 }
 
-/**
- * Inject the Nudge "Track" toggle button into the compose toolbar.
- *
- * @param {Element} composeContainer  The compose dialog element
- * @param {Element} sendBtn           The Gmail "Send" button
- */
-function injectNudgeButton(composeContainer, sendBtn) {
-  // State for this compose window
-  let trackingEnabled = true;
-  let trackingId = null;
+// ── Nudge Sidebar (shared UI) ──────────────────────────────────
 
-  // Create button
-  const nudgeBtn = document.createElement('button');
-  nudgeBtn.className = 'nudge-track-btn';
-  nudgeBtn.title = 'Toggle Nudge email tracking';
-  nudgeBtn.setAttribute('type', 'button');
-  nudgeBtn.style.cssText = `
-    background: #6366f1;
-    color: white;
-    border: none;
-    border-radius: 6px;
-    padding: 4px 10px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    margin-left: 8px;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    vertical-align: middle;
+function mountSidebar(container, sendBtn) {
+  ensureStyles();
+
+  // ── Build panel ──
+  const uid = `nudge-${Date.now()}`;
+  const panel = document.createElement('div');
+  panel.className = 'nudge-panel';
+  panel.innerHTML = `
+    <div class="nudge-panel-head">
+      <span class="nudge-brand">📨 Nudge</span>
+      <label class="nudge-switch" title="Toggle tracking">
+        <input type="checkbox" id="${uid}-chk" checked>
+        <span class="nudge-track"></span>
+      </label>
+    </div>
+    <div class="nudge-panel-body">
+      <div class="nudge-pill nudge-on" id="${uid}-status">Tracking ON</div>
+      <div class="nudge-hint">
+        <div class="nudge-hint-label">⏰ Best send time</div>
+        <div class="nudge-hint-val" id="${uid}-sendtime">Loading…</div>
+      </div>
+    </div>
   `;
-  nudgeBtn.innerHTML = '📨 Nudge: ON';
 
-  nudgeBtn.addEventListener('click', () => {
-    trackingEnabled = !trackingEnabled;
-    nudgeBtn.innerHTML = trackingEnabled ? '📨 Nudge: ON' : '📨 Nudge: OFF';
-    nudgeBtn.style.background = trackingEnabled ? '#6366f1' : '#64748b';
+  const checkbox  = panel.querySelector(`#${uid}-chk`);
+  const statusPill = panel.querySelector(`#${uid}-status`);
+  const sendtimeEl = panel.querySelector(`#${uid}-sendtime`);
+
+  // Toggle tracking on/off
+  checkbox.addEventListener('change', () => {
+    const on = checkbox.checked;
+    statusPill.textContent = on ? 'Tracking ON' : 'Tracking OFF';
+    statusPill.className = `nudge-pill ${on ? 'nudge-on' : 'nudge-off'}`;
   });
 
-  // Insert next to the send button
-  sendBtn.parentElement.insertBefore(nudgeBtn, sendBtn.nextSibling);
+  // Mount panel
+  const root = adapter.getSidebarRoot(container);
+  root.appendChild(panel);
 
-  // Intercept the send button click to inject pixel before sending
-  sendBtn.addEventListener('click', async (e) => {
-    if (!trackingEnabled) return;
+  // Fetch send-time suggestion in background
+  chrome.runtime.sendMessage({ type: 'GET_SEND_TIME' })
+    .then(r => { if (sendtimeEl) sendtimeEl.textContent = r?.suggestion ?? 'No data yet'; })
+    .catch(() => { if (sendtimeEl) sendtimeEl.textContent = 'No data yet'; });
 
-    const subject   = extractSubject(composeContainer);
-    const recipient = extractRecipient(composeContainer);
-    const content   = extractBody(composeContainer);
+  // ── Intercept Send ──
+  sendBtn.addEventListener('click', async () => {
+    if (!checkbox.checked) return;
 
-    if (!subject && !recipient) return; // Nothing to track
+    const subject   = adapter.extractSubject(container);
+    const recipient = adapter.extractRecipient(container);
+    const content   = adapter.extractBody(container);
+
+    // Nothing to track — skip silently
+    if (!subject && !recipient) return;
+
+    statusPill.textContent = 'Registering…';
+    statusPill.className   = 'nudge-pill nudge-pending';
 
     try {
-      nudgeBtn.innerHTML = '📨 Registering…';
-      nudgeBtn.disabled = true;
-
-      // Ask background service worker to register the email
-      const response = await chrome.runtime.sendMessage({
+      const res = await chrome.runtime.sendMessage({
         type: 'REGISTER_EMAIL',
         payload: { subject, recipientEmail: recipient, content }
       });
 
-      if (response.success) {
-        trackingId = response.trackingId;
-        // Inject the invisible tracking pixel into the email body
-        injectTrackingPixel(composeContainer, response.trackingPixelUrl);
-        nudgeBtn.innerHTML = '✅ Tracked!';
-        console.log('[Nudge] Email registered, trackingId:', trackingId);
+      if (res.success) {
+        adapter.injectPixel(container, res.trackingPixelUrl);
+        statusPill.textContent = '✅ Tracked!';
+        statusPill.className   = 'nudge-pill nudge-on';
+        console.log('[Nudge] Registered email, id:', res.trackingId);
       } else {
-        console.warn('[Nudge] Registration failed:', response.error);
-        nudgeBtn.innerHTML = '⚠️ ' + (response.error || 'Error');
-        nudgeBtn.style.background = '#ef4444';
+        statusPill.textContent = '⚠️ ' + (res.error ?? 'Error');
+        statusPill.className   = 'nudge-pill nudge-off';
       }
     } catch (err) {
-      console.error('[Nudge] Error registering email:', err);
-      nudgeBtn.innerHTML = '⚠️ Error';
+      console.error('[Nudge] sendMessage failed:', err);
+      statusPill.textContent = '⚠️ Extension error';
+      statusPill.className   = 'nudge-pill nudge-off';
     }
-  }, { once: false }); // NOTE: listen every time (user may cancel and retry)
+  });
 }
 
-// ── Gmail DOM extraction helpers ──────────────────────────────
+// ── Helpers ────────────────────────────────────────────────────
 
-/**
- * Extract the email subject from the compose window.
- * Gmail's subject input has the name "subjectbox".
- */
-function extractSubject(composeContainer) {
-  const subjectInput = composeContainer.querySelector('input[name="subjectbox"]');
-  return subjectInput ? subjectInput.value.trim() : '';
+function buildPixelImg(url) {
+  const img = document.createElement('img');
+  img.src       = url;
+  img.width     = 1;
+  img.height    = 1;
+  img.style.cssText = 'display:block;border:none;width:1px;height:1px;opacity:0;position:absolute;';
+  img.className = 'nudge-pixel';
+  img.alt       = '';
+  return img;
 }
 
-/**
- * Extract the recipient email from the compose window.
- * Gmail renders recipients in [email] data attributes or visible spans.
- */
-function extractRecipient(composeContainer) {
-  // Try the "To" field chip (Gmail renders recipients as chips with data-hovercard-id)
-  const chip = composeContainer.querySelector('[data-hovercard-id]');
-  if (chip) {
-    const hoverId = chip.getAttribute('data-hovercard-id');
-    if (hoverId && hoverId.includes('@')) return hoverId;
-  }
+// ── Injected CSS (once per page) ───────────────────────────────
 
-  // Fallback: look for email in textarea[name="to"] or input with aria-label="To"
-  const toInput = composeContainer.querySelector('[aria-label="To"], [name="to"]');
-  if (toInput) return toInput.value.trim();
+let _stylesInjected = false;
+function ensureStyles() {
+  if (_stylesInjected) return;
+  _stylesInjected = true;
 
-  // Last resort: find any text that looks like an email in the To area
-  const toArea = composeContainer.querySelector('.vO'); // Gmail's To field class
-  if (toArea) {
-    const emailMatch = toArea.innerText.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
-    if (emailMatch) return emailMatch[0];
-  }
+  const style = document.createElement('style');
+  style.textContent = `
+    /* ── Nudge panel ── */
+    .nudge-panel {
+      display: inline-flex;
+      flex-direction: column;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 7px 10px;
+      margin: 4px 6px;
+      min-width: 155px;
+      font-family: system-ui, sans-serif;
+      font-size: 12px;
+      color: #f1f5f9;
+      box-shadow: 0 2px 10px rgba(0,0,0,.4);
+      vertical-align: middle;
+      z-index: 9999;
+      line-height: 1.4;
+    }
+    .nudge-panel-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .nudge-brand {
+      font-weight: 700;
+      font-size: 12px;
+      color: #818cf8;
+      letter-spacing: -.01em;
+    }
 
-  return '';
-}
+    /* Status pill */
+    .nudge-pill {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 7px;
+      border-radius: 20px;
+      margin-bottom: 6px;
+    }
+    .nudge-on      { background: rgba(34,197,94,.15);  color: #4ade80; }
+    .nudge-off     { background: rgba(239,68,68,.15);  color: #f87171; }
+    .nudge-pending { background: rgba(99,102,241,.15); color: #a5b4fc; }
 
-/**
- * Extract the email body text.
- * Gmail's compose body is a contenteditable div.
- */
-function extractBody(composeContainer) {
-  const bodyEl = composeContainer.querySelector('[contenteditable="true"][aria-label]');
-  return bodyEl ? bodyEl.innerText.trim() : '';
-}
+    /* Send-time hint */
+    .nudge-hint-label {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: #64748b;
+      margin-bottom: 2px;
+    }
+    .nudge-hint-val {
+      font-size: 11px;
+      font-weight: 600;
+      color: #cbd5e1;
+    }
 
-/**
- * Inject a 1x1 invisible tracking pixel into the email body.
- * The pixel is placed at the very end of the message.
- */
-function injectTrackingPixel(composeContainer, pixelUrl) {
-  const bodyEl = composeContainer.querySelector('[contenteditable="true"][aria-label]');
-  if (!bodyEl) {
-    console.warn('[Nudge] Could not find compose body to inject pixel');
-    return;
-  }
-
-  // Remove any previously injected pixel in case of re-send
-  const existing = bodyEl.querySelector('.nudge-pixel');
-  if (existing) existing.remove();
-
-  // Create invisible tracking pixel
-  const pixelImg = document.createElement('img');
-  pixelImg.src = pixelUrl;
-  pixelImg.width = 1;
-  pixelImg.height = 1;
-  pixelImg.style.cssText = 'display:block;border:none;width:1px;height:1px;opacity:0;position:absolute;';
-  pixelImg.className = 'nudge-pixel';
-  pixelImg.alt = '';
-
-  bodyEl.appendChild(pixelImg);
-  console.log('[Nudge] Tracking pixel injected:', pixelUrl);
+    /* Toggle switch */
+    .nudge-switch {
+      position: relative;
+      display: inline-block;
+      width: 30px;
+      height: 17px;
+      cursor: pointer;
+    }
+    .nudge-switch input { opacity: 0; width: 0; height: 0; }
+    .nudge-track {
+      position: absolute;
+      inset: 0;
+      background: #475569;
+      border-radius: 17px;
+      transition: background .2s;
+    }
+    .nudge-track::before {
+      content: '';
+      position: absolute;
+      width: 13px;
+      height: 13px;
+      left: 2px;
+      bottom: 2px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .2s;
+    }
+    .nudge-switch input:checked + .nudge-track { background: #6366f1; }
+    .nudge-switch input:checked + .nudge-track::before { transform: translateX(13px); }
+  `;
+  document.head.appendChild(style);
 }

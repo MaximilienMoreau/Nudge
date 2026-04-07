@@ -16,4 +16,7 @@ public interface TrackingEventRepository extends JpaRepository<TrackingEvent, Lo
 
     /** Count events of a specific type for an email (e.g. count opens) */
     long countByEmailAndType(TrackedEmail email, EventType type);
+
+    /** All OPEN events across all emails owned by a given user — used for send-time analysis */
+    List<TrackingEvent> findByEmail_User_EmailAndType(String userEmail, EventType type);
 }

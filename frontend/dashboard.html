@@ -27,6 +27,9 @@
       <div class="nav-item" onclick="showView('track')">
         <span>➕</span> Track Email
       </div>
+      <div class="nav-item" onclick="showView('insights')">
+        <span>🧠</span> AI Insights
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -165,6 +168,67 @@
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ── AI Insights view ───────────────────────────────────── -->
+    <div class="content" id="view-insights" style="display:none">
+
+      <!-- Send-time card -->
+      <div class="card" style="max-width:520px;margin-bottom:1.5rem">
+        <div class="card-header">
+          <span class="card-title">⏰ Best Send Time</span>
+          <button class="btn btn-ghost btn-sm" onclick="loadSendTime()">↻ Refresh</button>
+        </div>
+        <div class="card-body" id="send-time-body">
+          <div class="empty-state"><div class="spinner"></div></div>
+        </div>
+      </div>
+
+      <!-- Platform support card -->
+      <div class="card" style="max-width:520px">
+        <div class="card-header">
+          <span class="card-title">🌐 Platform Support</span>
+        </div>
+        <div class="card-body">
+          <table style="width:100%;border-collapse:collapse;font-size:.875rem">
+            <thead>
+              <tr>
+                <th style="text-align:left;padding:.5rem;color:var(--muted);font-weight:600">Platform</th>
+                <th style="text-align:left;padding:.5rem;color:var(--muted);font-weight:600">Injection</th>
+                <th style="text-align:left;padding:.5rem;color:var(--muted);font-weight:600">Tracking</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="padding:.5rem">Gmail</td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Sidebar</span></td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel + Link</span></td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem">Outlook Web</td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Sidebar</span></td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel + Link</span></td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem">Other web clients</td>
+                <td style="padding:.5rem"><span class="badge badge-gray">Dashboard fallback</span></td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem">Native apps (macOS Mail…)</td>
+                <td style="padding:.5rem"><span class="badge badge-gray">Dashboard fallback</span></td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="margin-top:1rem;padding:.75rem;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.15);border-radius:8px;font-size:.8rem;color:var(--muted);line-height:1.6">
+            For platforms without browser extension support, register emails manually via
+            <strong style="color:var(--text)">Track Email</strong> and paste the pixel HTML into your email client.
+          </div>
+        </div>
+      </div>
+
     </div>
 
   </div>

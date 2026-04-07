@@ -35,15 +35,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── View switching ────────────────────────────────────────────
 
+const VIEW_TITLES = { emails: 'Email Dashboard', track: 'Track New Email', insights: 'AI Insights' };
+
 function showView(name) {
-  document.getElementById('view-emails').style.display = name === 'emails' ? '' : 'none';
-  document.getElementById('view-track').style.display  = name === 'track' ? '' : 'none';
-  document.getElementById('view-title').textContent =
-    name === 'emails' ? 'Email Dashboard' : 'Track New Email';
+  ['emails', 'track', 'insights'].forEach(v => {
+    document.getElementById(`view-${v}`).style.display = v === name ? '' : 'none';
+  });
+  document.getElementById('view-title').textContent = VIEW_TITLES[name] ?? name;
 
   document.querySelectorAll('.nav-item').forEach((el, i) => {
-    el.classList.toggle('active', (i === 0 && name === 'emails') || (i === 1 && name === 'track'));
+    const views = ['emails', 'track', 'insights'];
+    el.classList.toggle('active', views[i] === name);
   });
+
+  if (name === 'insights') loadSendTime();
 }
 
 // ── Load emails ───────────────────────────────────────────────
@@ -120,6 +125,57 @@ function updateStats(emails) {
   document.getElementById('stat-opened').textContent = opened;
   document.getElementById('stat-hot').textContent    = hot;
   document.getElementById('stat-avg-score').textContent = avg;
+}
+
+// ── AI Insights: Send-time ────────────────────────────────────
+
+async function loadSendTime() {
+  const body = document.getElementById('send-time-body');
+  body.innerHTML = `<div class="empty-state"><div class="spinner"></div></div>`;
+
+  try {
+    const res  = await authFetch('/api/ai/send-time', { method: 'POST' });
+    const data = await res.json();
+
+    if (!res.ok) throw new Error(data.error || 'Failed to load');
+
+    if (!data.hasData) {
+      body.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <h3>No data yet</h3>
+          <p style="color:var(--muted)">${escHtml(data.suggestion)}</p>
+        </div>`;
+      return;
+    }
+
+    body.innerHTML = `
+      <div style="display:flex;align-items:center;gap:1.5rem;flex-wrap:wrap">
+        <div style="text-align:center">
+          <div style="font-size:2.5rem;font-weight:800;color:var(--primary);letter-spacing:-.02em">
+            ${escHtml(data.bestDay)}
+          </div>
+          <div style="color:var(--muted);font-size:.8rem;margin-top:.25rem">Best day</div>
+        </div>
+        <div style="text-align:center">
+          <div style="font-size:2.5rem;font-weight:800;color:var(--primary);letter-spacing:-.02em">
+            ${escHtml(data.bestHour)}
+          </div>
+          <div style="color:var(--muted);font-size:.8rem;margin-top:.25rem">Best time</div>
+        </div>
+        <div style="flex:1;min-width:160px">
+          <div style="font-size:1.05rem;font-weight:600;margin-bottom:.3rem">
+            ${escHtml(data.suggestion)}
+          </div>
+          <div style="font-size:.8rem;color:var(--muted)">${escHtml(data.rationale)}</div>
+        </div>
+      </div>`;
+  } catch (err) {
+    body.innerHTML = `<div class="empty-state">
+      <div class="empty-icon">⚠️</div>
+      <p style="color:var(--muted)">${escHtml(err.message)}</p>
+    </div>`;
+  }
 }
 
 // ── Track Email (standalone page) ────────────────────────────

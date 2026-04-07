@@ -47,8 +47,7 @@
     }
 
     .dot {
-      width: 8px;
-      height: 8px;
+      width: 8px; height: 8px;
       border-radius: 50%;
       background: #ef4444;
       flex-shrink: 0;
@@ -56,6 +55,26 @@
     .dot.connected { background: #22c55e; }
 
     .status-text { flex: 1; font-size: .85rem; }
+
+    /* Platform badge */
+    .platform-row {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      padding: .5rem .75rem;
+      background: var(--surface);
+      border-radius: 8px;
+      margin-bottom: .75rem;
+      font-size: .8rem;
+    }
+    .platform-badge {
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: .75rem;
+      font-weight: 600;
+    }
+    .platform-supported   { background: rgba(99,102,241,.2); color: #818cf8; }
+    .platform-unsupported { background: rgba(239,68,68,.15); color: #f87171; }
 
     /* Login form */
     .form-group { margin-bottom: .65rem; }
@@ -84,12 +103,13 @@
       font-size: .875rem;
       font-weight: 600;
       margin-top: .75rem;
+      text-decoration: none;
+      text-align: center;
     }
     .btn:hover { background: #4f46e5; }
     .btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); margin-top: .5rem; }
 
-    .error { color: #ef4444; font-size: .8rem; margin-top: .4rem; }
-    .success { color: #22c55e; font-size: .8rem; margin-top: .4rem; }
+    .error   { color: #ef4444; font-size: .8rem; margin-top: .4rem; }
 
     .user-info {
       background: var(--surface);
@@ -108,6 +128,11 @@
       font-size: .8rem;
       color: var(--muted);
       line-height: 1.5;
+      margin-bottom: .75rem;
+    }
+    .tip.warn {
+      background: rgba(239,68,68,.08);
+      border-color: rgba(239,68,68,.2);
     }
 
     .hidden { display: none !important; }
@@ -116,7 +141,7 @@
 <body>
 
   <div class="header">
-    <span>📨</span>
+    <img src="icons/icon48.png" alt="Nudge" width="36" height="36" style="border-radius:8px;flex-shrink:0;">
     <div>
       <div class="logo">Nudge</div>
       <div class="tagline">Email Tracking</div>
@@ -127,6 +152,12 @@
   <div class="status-row">
     <div class="dot" id="status-dot"></div>
     <span class="status-text" id="status-text">Checking…</span>
+  </div>
+
+  <!-- Platform detection -->
+  <div class="platform-row" id="platform-row">
+    <span style="color:var(--muted)">Platform:</span>
+    <span class="platform-badge" id="platform-badge">Detecting…</span>
   </div>
 
   <!-- Logged OUT view -->
@@ -153,14 +184,20 @@
       <div id="user-email-display" style="font-weight:600"></div>
     </div>
 
-    <div class="tip">
-      ✅ Nudge is active! Compose an email in Gmail — a tracking button will appear next to Send.
+    <!-- Shown on supported platforms -->
+    <div class="tip" id="tip-supported">
+      ✅ Nudge is active! Open a compose window — the tracking panel will appear inline next to Send.
     </div>
 
-    <button class="btn secondary" onclick="logout()">Sign Out</button>
-    <a href="http://localhost:8080/../dashboard.html" target="_blank" style="display:block;text-align:center;color:var(--primary);font-size:.8rem;margin-top:.6rem;text-decoration:none">
+    <!-- Shown on unsupported platforms -->
+    <div class="tip warn hidden" id="tip-fallback">
+      ⚠️ Direct injection is not supported on this page. Use the web dashboard to track emails manually.
+    </div>
+
+    <a href="http://localhost:8080/dashboard.html" target="_blank" class="btn" style="margin-top:0">
       Open Dashboard ↗
     </a>
+    <button class="btn secondary" onclick="logout()">Sign Out</button>
   </div>
 
 </body>
