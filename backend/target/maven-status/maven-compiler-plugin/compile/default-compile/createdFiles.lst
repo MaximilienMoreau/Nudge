@@ -10,6 +10,7 @@ com/nudge/security/JwtUtil.class
 com/nudge/security/JwtAuthFilter.class
 com/nudge/model/User.class
 com/nudge/dto/RegisterRequest.class
+com/nudge/dto/SendTimeResponse.class
 com/nudge/controller/GlobalExceptionHandler.class
 com/nudge/config/WebSocketConfig$1.class
 com/nudge/service/EmailService.class

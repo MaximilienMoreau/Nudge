@@ -8,6 +8,7 @@
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/dto/FollowUpResponse.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/dto/EmailDTO.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/service/AIService.java
+/home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/dto/SendTimeResponse.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/repository/UserRepository.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/service/AuthService.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/model/User.java
