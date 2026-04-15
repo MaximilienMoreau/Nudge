@@ -151,6 +151,18 @@ if (!adapter) {
     adapter.findComposeWindows().forEach(({ container, sendBtn }) => {
       if (seen.has(container)) return;
       seen.add(container);
+
+      // F6: When a compose window is closed / destroyed, remove it from `seen`
+      // so a re-opened draft (or a new compose from the Drafts folder) triggers
+      // a fresh Nudge panel mount.
+      const observer = new MutationObserver(() => {
+        if (!document.body.contains(container)) {
+          seen.delete(container);
+          observer.disconnect();
+        }
+      });
+      observer.observe(document.body, { childList: true, subtree: true });
+
       mountSidebar(container, sendBtn);
     });
   }

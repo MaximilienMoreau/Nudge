@@ -1,5 +1,6 @@
 package com.nudge.service;
 
+import com.nudge.model.EventType;
 import com.nudge.model.TrackingEvent;
 import org.springframework.stereotype.Service;
 
@@ -14,33 +15,38 @@ import java.util.List;
  *  - Opens volume   : up to 40 pts (15 per open, capped)
  *  - Recency        : up to 40 pts (how recently was the last open?)
  *  - Frequency bonus: up to 20 pts (multiple opens = high interest)
+ *
+ * Q1/Q8: EventType is compared by identity (==) everywhere — no .name().equals().
+ * P3:    computeScore passes over the event list once to collect all metrics.
  */
 @Service
 public class LeadScoringService {
 
     /**
      * Compute the lead score from a list of tracking events.
+     * P3: Single-pass accumulation — one loop collects openCount and lastOpen.
      *
      * @param events all events for the email (may be empty)
      * @return score in [0, 100]
      */
     public int computeScore(List<TrackingEvent> events) {
-        long openCount = events.stream()
-                .filter(e -> e.getType().name().equals("OPEN"))
-                .count();
+        long openCount = 0;
+        LocalDateTime lastOpen = null;
 
-        if (openCount == 0) {
-            return 0;
+        // P3: one pass over the list collects both metrics
+        for (TrackingEvent e : events) {
+            if (e.getType() == EventType.OPEN) {   // Q1/Q8: enum identity comparison
+                openCount++;
+                if (lastOpen == null || e.getTimestamp().isAfter(lastOpen)) {
+                    lastOpen = e.getTimestamp();
+                }
+            }
         }
 
-        // Find the most recent open
-        LocalDateTime lastOpen = events.stream()
-                .map(TrackingEvent::getTimestamp)
-                .max(LocalDateTime::compareTo)
-                .orElse(null);
+        if (openCount == 0) return 0;
 
-        int volumeScore   = volumeScore(openCount);
-        int recencyScore  = recencyScore(lastOpen);
+        int volumeScore    = volumeScore(openCount);
+        int recencyScore   = recencyScore(lastOpen);
         int frequencyBonus = frequencyBonus(openCount);
 
         return Math.min(volumeScore + recencyScore + frequencyBonus, 100);
@@ -62,11 +68,10 @@ public class LeadScoringService {
     private int recencyScore(LocalDateTime lastOpen) {
         if (lastOpen == null) return 0;
         long hoursAgo = ChronoUnit.HOURS.between(lastOpen, LocalDateTime.now());
-
-        if (hoursAgo < 1)    return 40;
-        if (hoursAgo < 24)   return 30;
-        if (hoursAgo < 72)   return 20;
-        if (hoursAgo < 168)  return 10;
+        if (hoursAgo < 1)   return 40;
+        if (hoursAgo < 24)  return 30;
+        if (hoursAgo < 72)  return 20;
+        if (hoursAgo < 168) return 10;
         return 0;
     }
 

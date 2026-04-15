@@ -1,30 +1,20 @@
 package com.nudge.dto;
 
-import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
-/** Input for AI follow-up generation. */
+/**
+ * Input for AI follow-up generation.
+ *
+ * S9: engagementScore and openCount are no longer accepted from the client.
+ *     The server recalculates them from the DB using emailId to prevent tampering.
+ */
 @Data
 public class FollowUpRequest {
 
     @NotNull
-    private Long emailId; // Used to look up context if needed
+    private Long emailId;
 
-    @NotBlank
-    private String subject;
-
-    @NotBlank
-    private String originalContent;
-
-    private String recipientEmail;
-
-    /** Computed engagement/lead score (0–100) */
-    private int engagementScore;
-
-    /** Number of opens recorded */
-    private int openCount;
-
-    /** Days since the email was first sent */
+    /** Days since the email was first sent (computed client-side from createdAt). */
     private int daysSinceSent;
 }

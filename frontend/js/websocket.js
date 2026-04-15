@@ -1,64 +1,43 @@
 /**
  * websocket.js — Real-time notification client
  *
- * Connects to the backend via STOMP over SockJS.
- * Subscribes to /user/queue/notifications.
- * When an email is opened, a toast is shown and the table refreshes.
- *
- * Requires: SockJS + STOMP client loaded from CDN (see <script> tags below).
- * These are injected dynamically so they don't block page load.
+ * A2:  Uses NUDGE_CONFIG.WS_URL from config.js.
+ * S3:  Passes ?token= in the SockJS URL so the server validates at HTTP level.
+ * U6:  Exponential backoff on reconnect (5s → 10s → 20s → 40s, capped at 60s).
+ * P1:  On EMAIL_OPENED notification, patches only the affected table row
+ *      by fetching the updated email DTO — no full table reload.
+ * P4:  SockJS and STOMP are loaded via <script defer> in dashboard.html,
+ *      not dynamically injected here.
  */
 
-const WS_URL = 'http://localhost:8080/ws';
-
-let stompClient = null;
-
-// Dynamically load SockJS and STOMP from CDN, then connect
-function loadWebSocketLibs(callback) {
-  if (window.SockJS && window.Stomp) {
-    callback();
-    return;
-  }
-
-  const sockjsScript = document.createElement('script');
-  sockjsScript.src = 'https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js';
-  sockjsScript.onload = () => {
-    const stompScript = document.createElement('script');
-    stompScript.src = 'https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js';
-    stompScript.onload = callback;
-    document.head.appendChild(stompScript);
-  };
-  document.head.appendChild(sockjsScript);
-}
+let stompClient   = null;
+let retryDelay    = 5000;   // U6: starts at 5s
+const MAX_DELAY   = 60000;
 
 function connectWebSocket() {
-  const token = localStorage.getItem('nudge_token');
-  if (!token) return;
+  const wsToken = localStorage.getItem('nudge_token');
+  if (!wsToken) return;
 
-  loadWebSocketLibs(() => {
-    const socket = new SockJS(WS_URL);
-    stompClient = Stomp.over(socket);
+  // S3: Pass JWT as query param for HTTP-level handshake validation
+  const socket = new SockJS(NUDGE_CONFIG.WS_URL + '?token=' + encodeURIComponent(wsToken));
+  stompClient  = Stomp.over(socket);
+  stompClient.debug = () => {};   // Suppress noisy debug logs
 
-    // Suppress noisy STOMP debug logs in production
-    stompClient.debug = () => {};
-
-    stompClient.connect(
-      { Authorization: `Bearer ${token}` },  // Sent in CONNECT frame headers
-      onConnected,
-      onError
-    );
-  });
+  stompClient.connect(
+    { Authorization: `Bearer ${wsToken}` },
+    onConnected,
+    onError
+  );
 }
 
 function onConnected() {
   setWsDot(true);
+  retryDelay = 5000;  // U6: reset backoff on successful connection
   console.log('[Nudge WS] Connected');
 
-  // Subscribe to personal notification queue
-  stompClient.subscribe('/user/queue/notifications', (frame) => {
+  stompClient.subscribe('/user/queue/notifications', frame => {
     try {
-      const notification = JSON.parse(frame.body);
-      handleEmailOpenedNotification(notification);
+      handleNotification(JSON.parse(frame.body));
     } catch (e) {
       console.error('[Nudge WS] Failed to parse notification', e);
     }
@@ -67,41 +46,61 @@ function onConnected() {
 
 function onError(err) {
   setWsDot(false);
-  console.warn('[Nudge WS] Connection error', err);
-  // Retry after 5 seconds
-  setTimeout(connectWebSocket, 5000);
+  console.warn('[Nudge WS] Connection error — retrying in', retryDelay, 'ms', err);
+  setTimeout(() => {
+    retryDelay = Math.min(retryDelay * 2, MAX_DELAY); // U6: exponential backoff
+    connectWebSocket();
+  }, retryDelay);
 }
 
-/**
- * Called when a tracked email is opened.
- * Shows a toast, refreshes the email table.
- */
-function handleEmailOpenedNotification(notification) {
-  const { subject, recipientEmail, openCount, leadScore } = notification;
+// ── Notification handler ──────────────────────────────────────
 
-  const isHot = leadScore >= 70;
-  const title = isHot ? '🔥 Hot Lead!' : '📬 Email Opened';
-  const msg = `"${subject}" was opened by ${recipientEmail} (${openCount}x, score: ${leadScore})`;
+async function handleNotification(notification) {
+  const { type, emailId, subject, recipientEmail, openCount, leadScore } = notification;
 
-  // Show toast — defined in dashboard.js
-  if (typeof showToast === 'function') {
-    showToast(title, msg, isHot ? 'success' : 'info');
+  if (type === 'EMAIL_OPENED') {
+    const isHot = leadScore >= 70;
+    const title = isHot ? '🔥 Hot Lead!' : '📬 Email Opened';
+    const msg   = `"${subject}" opened by ${recipientEmail} (${openCount}x, score: ${leadScore})`;
+
+    if (typeof showToast === 'function') {
+      showToast(title, msg, isHot ? 'success' : 'info');
+    }
+
+    // P1: Fetch only the updated email DTO and patch the table row
+    try {
+      const res = await fetch(`${NUDGE_CONFIG.API_BASE}/api/emails/${emailId}`, {
+        headers: { 'Authorization': `Bearer ${localStorage.getItem('nudge_token')}` }
+      });
+      if (res.ok && typeof updateEmailRow === 'function') {
+        updateEmailRow(await res.json());
+      }
+    } catch {
+      // Fallback to full reload if the targeted update fails
+      if (typeof loadEmails === 'function') loadEmails();
+    }
   }
 
-  // Refresh table to show updated open count & score
-  if (typeof loadEmails === 'function') {
-    loadEmails();
+  if (type === 'FOLLOW_UP_REMINDER') {
+    if (typeof showToast === 'function') {
+      showToast(
+        '⏰ Follow-up reminder',
+        `Time to follow up on "${subject}" sent to ${recipientEmail}`,
+        'info'
+      );
+    }
   }
 }
+
+// ── WS indicator ─────────────────────────────────────────────
 
 function setWsDot(connected) {
   const dot   = document.getElementById('ws-dot');
   const label = document.getElementById('ws-label');
   if (!dot) return;
-
   dot.classList.toggle('connected', connected);
   label.textContent = connected ? 'Live' : 'Reconnecting…';
 }
 
-// Boot the connection when page loads
+// Boot when page loads
 document.addEventListener('DOMContentLoaded', connectWebSocket);

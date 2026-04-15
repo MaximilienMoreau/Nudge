@@ -1,5 +1,6 @@
 package com.nudge.security;
 
+import com.nudge.model.User;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -21,7 +22,9 @@ import java.io.IOException;
  * Intercepts every HTTP request, extracts the JWT from the Authorization header,
  * validates it, and loads the user into the SecurityContext.
  *
- * Runs once per request (OncePerRequestFilter).
+ * S6: After signature validation, the filter checks the "tv" (tokenVersion) claim
+ * against the User's stored tokenVersion. If they differ, the token is rejected —
+ * this revokes all tokens issued before the last password change or logout.
  */
 @Component
 public class JwtAuthFilter extends OncePerRequestFilter {
@@ -46,9 +49,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         if (token != null && jwtUtil.isValid(token)) {
             String email = jwtUtil.extractEmail(token);
 
-            // Only set the auth if not already authenticated
             if (SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+
+                // S6: Reject tokens whose tokenVersion no longer matches the DB
+                if (userDetails instanceof User user) {
+                    int tokenTv = jwtUtil.extractTokenVersion(token);
+                    if (tokenTv != user.getTokenVersion()) {
+                        log.debug("JWT rejected: tokenVersion mismatch for {}", email);
+                        filterChain.doFilter(request, response);
+                        return;
+                    }
+                }
+
                 UsernamePasswordAuthenticationToken auth =
                         new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 auth.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
