@@ -12,16 +12,32 @@ import com.nudge.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
  * Core email management service.
- * Handles registration of emails for tracking and assembling the EmailDTO.
+ *
+ * Q4: N+1 queries fixed — events for all emails are batch-fetched in a single
+ *     query, then grouped into a Map<emailId, List<event>> before DTO assembly.
+ *
+ * S8: Email content is encrypted at rest via EncryptionService.
+ *
+ * F1: Soft-delete via archivedAt timestamp.
+ *
+ * F3: Multi-recipient support — createTrackedEmail accepts a list of recipient
+ *     emails and returns one EmailDTO per recipient.
+ *
+ * A3: getEmailsForUser supports pagination.
  */
 @Service
 public class EmailService {
@@ -32,6 +48,7 @@ public class EmailService {
     private final TrackingEventRepository eventRepo;
     private final UserRepository userRepo;
     private final LeadScoringService leadScoringService;
+    private final EncryptionService encryptionService;
 
     @Value("${app.base.url}")
     private String baseUrl;
@@ -39,41 +56,68 @@ public class EmailService {
     public EmailService(TrackedEmailRepository emailRepo,
                         TrackingEventRepository eventRepo,
                         UserRepository userRepo,
-                        LeadScoringService leadScoringService) {
-        this.emailRepo = emailRepo;
-        this.eventRepo = eventRepo;
-        this.userRepo = userRepo;
+                        LeadScoringService leadScoringService,
+                        EncryptionService encryptionService) {
+        this.emailRepo         = emailRepo;
+        this.eventRepo         = eventRepo;
+        this.userRepo          = userRepo;
         this.leadScoringService = leadScoringService;
+        this.encryptionService  = encryptionService;
     }
 
     /**
-     * Register a new email for tracking.
-     * Generates a unique trackingId (UUID) and returns the full DTO
-     * which includes the tracking pixel URL to embed in the email body.
+     * Register one or more emails for tracking.
+     *
+     * F3: If request.recipientEmails has multiple entries, one TrackedEmail is created
+     *     per recipient, each with its own unique trackingId.
+     *
+     * S8: Email content is encrypted before persisting.
+     *
+     * @return list of EmailDTOs (one per recipient)
      */
-    public EmailDTO createTrackedEmail(String userEmail, EmailCreateRequest request) {
+    @Transactional
+    public List<EmailDTO> createTrackedEmail(String userEmail, EmailCreateRequest request) {
         User user = userRepo.findByEmail(userEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
 
-        TrackedEmail email = new TrackedEmail();
-        email.setUser(user);
-        email.setSubject(request.getSubject());
-        email.setContent(request.getContent());
-        email.setRecipientEmail(request.getRecipientEmail());
-        email.setTrackingId(UUID.randomUUID().toString());
-        emailRepo.save(email);
+        // F3: Determine effective recipient list
+        List<String> recipients = request.getRecipientEmails();
+        if (recipients == null || recipients.isEmpty()) {
+            recipients = List.of(request.getRecipientEmail());
+        }
 
-        log.info("Created tracked email '{}' for user {}", email.getSubject(), userEmail);
-        return toDTO(email);
+        String encryptedContent = encryptionService.encrypt(request.getContent()); // S8
+
+        List<EmailDTO> results = new ArrayList<>();
+        for (String recipient : recipients) {
+            TrackedEmail email = new TrackedEmail();
+            email.setUser(user);
+            email.setSubject(request.getSubject());
+            email.setContent(encryptedContent);    // S8: stored encrypted
+            email.setRecipientEmail(recipient);
+            email.setTrackingId(UUID.randomUUID().toString());
+            emailRepo.save(email);
+
+            log.info("Created tracked email '{}' for user {} → {}", email.getSubject(), userEmail, recipient);
+            results.add(toDTO(email, List.of())); // New email has no events yet
+        }
+        return results;
     }
 
-    /** Retrieve all tracked emails for the authenticated user. */
-    public List<EmailDTO> getEmailsForUser(String userEmail) {
+    /**
+     * A3: Paginated list of active tracked emails for the authenticated user.
+     */
+    public Page<EmailDTO> getEmailsForUser(String userEmail, Pageable pageable) {
         User user = userRepo.findByEmail(userEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
-        return emailRepo.findByUserOrderByCreatedAtDesc(user).stream()
-                .map(this::toDTO)
-                .collect(Collectors.toList());
+
+        Page<TrackedEmail> page = emailRepo.findByUserAndArchivedAtIsNullOrderByCreatedAtDesc(user, pageable);
+
+        // Q4: Batch-fetch all events for the current page in one query
+        List<TrackedEmail> emails = page.getContent();
+        Map<Long, List<TrackingEvent>> eventsByEmail = batchFetchEvents(emails);
+
+        return page.map(email -> toDTO(email, eventsByEmail.getOrDefault(email.getId(), List.of())));
     }
 
     /** Retrieve a single email DTO by ID (validates ownership). */
@@ -83,16 +127,59 @@ public class EmailService {
         if (!email.getUser().getEmail().equals(userEmail)) {
             throw new SecurityException("Access denied");
         }
-        return toDTO(email);
+        List<TrackingEvent> events = eventRepo.findByEmailOrderByTimestampDesc(email);
+        return toDTO(email, events);
     }
 
-    // ── Private helpers ──────────────────────────────────────────
+    /**
+     * F1: Soft-delete an email. Sets archivedAt to now; the row is kept in the DB.
+     * Throws SecurityException if the email does not belong to the authenticated user.
+     */
+    @Transactional
+    public void archiveEmail(Long emailId, String userEmail) {
+        TrackedEmail email = emailRepo.findById(emailId)
+                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
+        if (!email.getUser().getEmail().equals(userEmail)) {
+            throw new SecurityException("Access denied");
+        }
+        email.setArchivedAt(LocalDateTime.now());
+        emailRepo.save(email);
+        log.info("Email {} archived by {}", emailId, userEmail);
+    }
 
-    /** Build the full DTO, computing stats and lead score from events. */
-    private EmailDTO toDTO(TrackedEmail email) {
-        List<TrackingEvent> events = eventRepo.findByEmailOrderByTimestampDesc(email);
+    /**
+     * F4: Schedule a follow-up reminder for an email.
+     */
+    @Transactional
+    public void scheduleFollowUp(Long emailId, String userEmail, LocalDateTime scheduledAt) {
+        TrackedEmail email = emailRepo.findById(emailId)
+                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
+        if (!email.getUser().getEmail().equals(userEmail)) {
+            throw new SecurityException("Access denied");
+        }
+        email.setScheduledFollowUpAt(scheduledAt);
+        emailRepo.save(email);
+        log.info("Follow-up scheduled for email {} at {}", emailId, scheduledAt);
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Q4: Batch-fetch events for a list of emails in one DB round-trip,
+     * then group them by email ID.
+     */
+    private Map<Long, List<TrackingEvent>> batchFetchEvents(List<TrackedEmail> emails) {
+        if (emails.isEmpty()) return Map.of();
+        List<TrackingEvent> allEvents = eventRepo.findByEmailInOrderByTimestampDesc(emails);
+        return allEvents.stream().collect(
+                Collectors.groupingBy(e -> e.getEmail().getId())
+        );
+    }
+
+    /** Build the full DTO from the email and its pre-fetched events. */
+    private EmailDTO toDTO(TrackedEmail email, List<TrackingEvent> events) {
         List<TrackingEvent> opens = events.stream()
-                .filter(e -> e.getType() == EventType.OPEN)
+                .filter(e -> e.getType() == EventType.OPEN)   // Q8: enum identity
                 .collect(Collectors.toList());
 
         int openCount = opens.size();
@@ -102,7 +189,8 @@ public class EmailService {
         EmailDTO dto = new EmailDTO();
         dto.setId(email.getId());
         dto.setSubject(email.getSubject());
-        dto.setContent(email.getContent());
+        // S8: decrypt content before sending to frontend
+        dto.setContent(encryptionService.decrypt(email.getContent()));
         dto.setRecipientEmail(email.getRecipientEmail());
         dto.setTrackingId(email.getTrackingId());
         dto.setCreatedAt(email.getCreatedAt());
@@ -111,17 +199,22 @@ public class EmailService {
         dto.setLeadScore(score);
         dto.setStatus(resolveStatus(openCount));
         dto.setTrackingPixelUrl(buildPixelUrl(email.getTrackingId()));
+        dto.setClickTrackingBaseUrl(buildClickBaseUrl(email.getTrackingId()));
 
         return dto;
     }
 
     private String resolveStatus(int openCount) {
-        if (openCount == 0)  return "Not Opened";
-        if (openCount == 1)  return "Opened";
+        if (openCount == 0) return "Not Opened";
+        if (openCount == 1) return "Opened";
         return "Opened Multiple Times";
     }
 
     private String buildPixelUrl(String trackingId) {
         return baseUrl + "/track/open/" + trackingId;
+    }
+
+    private String buildClickBaseUrl(String trackingId) {
+        return baseUrl + "/track/click/" + trackingId + "?url=";
     }
 }

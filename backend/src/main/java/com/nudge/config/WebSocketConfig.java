@@ -3,7 +3,10 @@ package com.nudge.config;
 import com.nudge.security.JwtUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.http.server.ServerHttpRequest;
+import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -12,21 +15,29 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
+import org.springframework.web.socket.WebSocketHandler;
 import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
 import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
 import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.web.socket.server.HandshakeInterceptor;
 
 import java.security.Principal;
+import java.util.Map;
 
 /**
  * STOMP over WebSocket configuration.
  *
- * Flow:
- *  1. Frontend connects to /ws with SockJS fallback
- *  2. On CONNECT frame, sends JWT in the Authorization header
- *  3. WebSocketAuthInterceptor validates JWT and sets the Principal
- *  4. Backend pushes notifications to /user/queue/notifications
- *  5. Frontend subscribes to /user/queue/notifications
+ * S3: Authentication at two levels:
+ *   1. HTTP handshake level: HandshakeInterceptor checks a ?token= query param
+ *      before the WebSocket upgrade is granted.
+ *   2. STOMP CONNECT level: ChannelInterceptor validates the JWT in the
+ *      Authorization header of the STOMP CONNECT frame and sets the Principal.
+ *
+ * Frontend must connect with:
+ *   new SockJS(WS_URL + '?token=' + jwtToken)
+ *
+ * A4 note: For production, replace enableSimpleBroker with enableStompBrokerRelay
+ *   pointed at a RabbitMQ / ActiveMQ instance so notifications survive restarts.
  */
 @Configuration
 @EnableWebSocketMessageBroker
@@ -36,30 +47,31 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final JwtUtil jwtUtil;
 
+    @Value("${app.cors.allowed-origins:*}")
+    private String corsAllowedOrigins;
+
     public WebSocketConfig(JwtUtil jwtUtil) {
         this.jwtUtil = jwtUtil;
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        // Enable simple in-memory broker for topics and user queues
         config.enableSimpleBroker("/topic", "/queue");
-        // Prefix for @MessageMapping annotated methods
         config.setApplicationDestinationPrefixes("/app");
-        // Prefix for user-specific destinations (/user/{username}/queue/...)
         config.setUserDestinationPrefix("/user");
     }
 
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns("*")
-                .withSockJS(); // SockJS fallback for browsers that don't support WebSocket
+                .setAllowedOriginPatterns(corsAllowedOrigins.split(","))
+                // S3: Validate the ?token= query param at HTTP handshake time
+                .addInterceptors(new JwtHandshakeInterceptor(jwtUtil))
+                .withSockJS();
     }
 
     /**
-     * Authenticate STOMP connections by validating the JWT passed in the
-     * Authorization header of the CONNECT frame.
+     * S3 STOMP-level: validate JWT in the CONNECT frame header and set Principal.
      */
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
@@ -75,16 +87,50 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         String token = authHeader.substring(7);
                         if (jwtUtil.isValid(token)) {
                             String email = jwtUtil.extractEmail(token);
-                            // Set the user principal for this WebSocket session
                             accessor.setUser(new Principal() {
                                 @Override public String getName() { return email; }
                             });
-                            log.debug("WebSocket authenticated: {}", email);
+                            log.debug("WebSocket STOMP authenticated: {}", email);
+                        } else {
+                            log.warn("WebSocket STOMP CONNECT rejected: invalid token");
                         }
                     }
                 }
                 return message;
             }
         });
+    }
+
+    // ── S3: HTTP-level handshake interceptor ───────────────────
+
+    private static class JwtHandshakeInterceptor implements HandshakeInterceptor {
+
+        private final JwtUtil jwtUtil;
+
+        JwtHandshakeInterceptor(JwtUtil jwtUtil) { this.jwtUtil = jwtUtil; }
+
+        @Override
+        public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
+                                       WebSocketHandler wsHandler, Map<String, Object> attributes) {
+            // Extract ?token= from the SockJS URL
+            String query = request.getURI().getQuery();
+            if (query != null) {
+                for (String param : query.split("&")) {
+                    if (param.startsWith("token=")) {
+                        String token = param.substring("token=".length());
+                        if (jwtUtil.isValid(token)) {
+                            attributes.put("wsUser", jwtUtil.extractEmail(token));
+                            return true;
+                        }
+                    }
+                }
+            }
+            log.warn("WebSocket handshake rejected: missing or invalid ?token= param");
+            return false;
+        }
+
+        @Override
+        public void afterHandshake(ServerHttpRequest req, ServerHttpResponse res,
+                                   WebSocketHandler handler, Exception ex) {}
     }
 }

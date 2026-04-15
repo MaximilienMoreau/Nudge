@@ -5,10 +5,19 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Nudge — Dashboard</title>
   <link rel="stylesheet" href="css/style.css"/>
+  <!-- U4: Score tooltip style -->
+  <style>
+    .score-wrap   { display:flex;align-items:center;gap:.35rem;cursor:help }
+    .score-help   { font-size:.65rem;color:var(--muted);border:1px solid currentColor;
+                    border-radius:50%;width:13px;height:13px;text-align:center;line-height:12px;
+                    flex-shrink:0;cursor:help }
+    .copy-btn     { font-size:.7rem;padding:2px 6px;margin-left:.4rem;cursor:pointer }
+    .pixel-url-box{ word-break:break-all;background:var(--bg);border:1px solid var(--border);
+                    border-radius:6px;padding:.5rem;font-size:.8rem;font-family:monospace }
+  </style>
 </head>
 <body>
 
-<!-- Toast container for real-time notifications -->
 <div id="toast-container"></div>
 
 <div class="layout">
@@ -37,7 +46,8 @@
         <div class="user-avatar" id="user-avatar">U</div>
         <div class="user-meta">
           <div class="name" id="user-email-display">—</div>
-          <div class="role">Pro Plan</div>
+          <!-- U5: Shows "Since <date>" or "Free Plan" — never hardcoded "Pro Plan" -->
+          <div class="role" id="user-role">Free Plan</div>
         </div>
       </div>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.5rem" onclick="logout()">
@@ -55,7 +65,6 @@
         <div class="topbar-title" id="view-title">Email Dashboard</div>
       </div>
       <div class="topbar-actions">
-        <!-- WebSocket connection indicator -->
         <div style="display:flex;align-items:center;gap:.4rem;color:var(--muted);font-size:.8rem">
           <span class="ws-dot" id="ws-dot"></span>
           <span id="ws-label">Connecting…</span>
@@ -70,7 +79,7 @@
     <div class="content" id="view-emails">
 
       <!-- Stats row -->
-      <div class="stats-row" id="stats-row">
+      <div class="stats-row">
         <div class="stat-card">
           <div class="stat-label">Total Tracked</div>
           <div class="stat-value purple" id="stat-total">—</div>
@@ -93,24 +102,35 @@
       <div class="card">
         <div class="card-header">
           <span class="card-title">Tracked Emails</span>
+          <!-- U3: Search input -->
+          <input type="search" id="email-search" placeholder="Search subject or recipient…"
+                 oninput="handleSearch(this.value)"
+                 style="padding:.35rem .6rem;border-radius:6px;border:1px solid var(--border);
+                        background:var(--bg);color:var(--text);font-size:.85rem;width:220px"/>
           <button class="btn btn-ghost btn-sm" onclick="loadEmails()">↻ Refresh</button>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Subject</th>
-                <th>Recipient</th>
-                <th>Sent</th>
-                <th>Status</th>
-                <th>Score</th>
-                <th>Last Opened</th>
+                <!-- U3: data-sort attributes enable column sorting -->
+                <th data-sort="subject">Subject</th>
+                <th data-sort="recipientEmail">Recipient</th>
+                <th data-sort="createdAt">Sent</th>
+                <th data-sort="status">Status</th>
+                <!-- U4: "?" tooltip on score column header -->
+                <th data-sort="leadScore"
+                    title="Reply Probability Score (0–100): open count + recency + frequency">
+                  Score ℹ
+                </th>
+                <th data-sort="lastOpenedAt">Last Opened</th>
                 <th>Actions</th>
+                <th></th>
               </tr>
             </thead>
             <tbody id="emails-tbody">
               <tr>
-                <td colspan="7">
+                <td colspan="8">
                   <div class="empty-state">
                     <div class="empty-icon">📬</div>
                     <h3>Loading emails…</h3>
@@ -152,17 +172,19 @@
             </button>
           </form>
 
-          <!-- Result shown after creation -->
-          <div id="track-result" style="display:none; margin-top:1.5rem">
+          <!-- U1: Result section with Copy buttons -->
+          <div id="track-result" style="display:none;margin-top:1.5rem">
             <div style="color:var(--success);font-weight:600;margin-bottom:.5rem">
               ✅ Email registered for tracking!
             </div>
             <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">
-              Tracking Pixel URL — embed this in your email as an image:
+              Tracking Pixel URL:
+              <button class="btn btn-ghost copy-btn" id="pixel-url-copy">📋 Copy URL</button>
             </div>
             <div class="pixel-url-box" id="pixel-url"></div>
             <div style="margin-top:.75rem;color:var(--muted);font-size:.8rem">
               HTML to paste in email body:
+              <button class="btn btn-ghost copy-btn" id="pixel-html-copy">📋 Copy HTML</button>
             </div>
             <div class="pixel-url-box" id="pixel-html"></div>
           </div>
@@ -172,8 +194,6 @@
 
     <!-- ── AI Insights view ───────────────────────────────────── -->
     <div class="content" id="view-insights" style="display:none">
-
-      <!-- Send-time card -->
       <div class="card" style="max-width:520px;margin-bottom:1.5rem">
         <div class="card-header">
           <span class="card-title">⏰ Best Send Time</span>
@@ -184,7 +204,6 @@
         </div>
       </div>
 
-      <!-- Platform support card -->
       <div class="card" style="max-width:520px">
         <div class="card-header">
           <span class="card-title">🌐 Platform Support</span>
@@ -193,9 +212,9 @@
           <table style="width:100%;border-collapse:collapse;font-size:.875rem">
             <thead>
               <tr>
-                <th style="text-align:left;padding:.5rem;color:var(--muted);font-weight:600">Platform</th>
-                <th style="text-align:left;padding:.5rem;color:var(--muted);font-weight:600">Injection</th>
-                <th style="text-align:left;padding:.5rem;color:var(--muted);font-weight:600">Tracking</th>
+                <th style="text-align:left;padding:.5rem;color:var(--muted)">Platform</th>
+                <th style="text-align:left;padding:.5rem;color:var(--muted)">Injection</th>
+                <th style="text-align:left;padding:.5rem;color:var(--muted)">Tracking</th>
               </tr>
             </thead>
             <tbody>
@@ -221,14 +240,8 @@
               </tr>
             </tbody>
           </table>
-
-          <div style="margin-top:1rem;padding:.75rem;background:rgba(99,102,241,.08);border:1px solid rgba(99,102,241,.15);border-radius:8px;font-size:.8rem;color:var(--muted);line-height:1.6">
-            For platforms without browser extension support, register emails manually via
-            <strong style="color:var(--text)">Track Email</strong> and paste the pixel HTML into your email client.
-          </div>
         </div>
       </div>
-
     </div>
 
   </div>
@@ -253,13 +266,20 @@
         </div>
         <div class="form-group">
           <label>Email Body</label>
-          <textarea id="m-content" placeholder="Paste your email content here (used for AI follow-ups)…"></textarea>
+          <textarea id="m-content" placeholder="Paste your email content (used for AI follow-ups)…"></textarea>
         </div>
+        <!-- U1: Modal result with copy buttons -->
         <div id="modal-result" style="display:none">
           <div style="color:var(--success);font-weight:600;margin-bottom:.5rem">✅ Tracking pixel created!</div>
-          <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">Pixel URL:</div>
+          <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">
+            Pixel URL:
+            <button type="button" class="btn btn-ghost copy-btn" id="modal-pixel-url-copy">📋 Copy URL</button>
+          </div>
           <div class="pixel-url-box" id="modal-pixel-url"></div>
-          <div style="margin-top:.5rem;color:var(--muted);font-size:.8rem">Embed HTML:</div>
+          <div style="margin-top:.5rem;color:var(--muted);font-size:.8rem">
+            Embed HTML:
+            <button type="button" class="btn btn-ghost copy-btn" id="modal-pixel-html-copy">📋 Copy HTML</button>
+          </div>
           <div class="pixel-url-box" id="modal-pixel-html"></div>
         </div>
       </form>
@@ -281,12 +301,20 @@
       <button class="modal-close" onclick="closeFollowUpModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div id="followup-context" style="background:var(--bg);border-radius:8px;padding:.75rem;margin-bottom:1rem;font-size:.85rem">
+      <div id="followup-context"
+           style="background:var(--bg);border-radius:8px;padding:.75rem;margin-bottom:1rem;font-size:.85rem">
         Loading context…
       </div>
       <button class="btn btn-primary" onclick="generateFollowUp()" id="gen-btn" style="width:100%">
         Generate Follow-Up
       </button>
+
+      <!-- U8: Fallback warning banner -->
+      <div id="ai-fallback-warning" style="display:none;margin-top:.75rem;padding:.6rem .85rem;
+           background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;
+           font-size:.8rem;color:#b45309">
+        ⚠️ AI is not configured — showing a generic template. Set <code>OPENAI_API_KEY</code> to get smart follow-ups.
+      </div>
 
       <div id="followup-result" style="display:none;margin-top:1rem">
         <div class="ai-result">
@@ -304,7 +332,11 @@
   </div>
 </div>
 
-<script src="js/dashboard.js"></script>
-<script src="js/websocket.js"></script>
+<!-- P4: SockJS and STOMP loaded statically with defer — no sequential onload chaining -->
+<script src="js/config.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js" defer></script>
+<script src="js/dashboard.js" defer></script>
+<script src="js/websocket.js" defer></script>
 </body>
 </html>

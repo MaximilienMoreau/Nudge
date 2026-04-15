@@ -3,17 +3,27 @@ package com.nudge.model;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Represents an outgoing email that has been registered for tracking.
- * Each email gets a unique trackingId that is embedded in the tracking pixel URL.
+ * Each email gets a unique trackingId embedded in the tracking pixel URL.
+ *
+ * A7: Removed the bidirectional @OneToMany events collection — it was never
+ * used (the service queries events directly via TrackingEventRepository) and
+ * forced Hibernate to maintain an extra collection on every load.
  */
 @Entity
-@Table(name = "tracked_emails")
+@Table(
+    name = "tracked_emails",
+    indexes = {
+        @Index(name = "idx_tracked_emails_user_id",     columnList = "user_id"),
+        @Index(name = "idx_tracked_emails_tracking_id", columnList = "tracking_id"),
+        @Index(name = "idx_tracked_emails_archived_at", columnList = "archived_at")
+    }
+)
 @Data
 @NoArgsConstructor
 public class TrackedEmail {
@@ -30,7 +40,7 @@ public class TrackedEmail {
     @Column(nullable = false)
     private String subject;
 
-    /** Email body — stored so AI can read it for follow-up generation */
+    /** Email body — stored (encrypted) so AI can read it for follow-up generation */
     @Column(columnDefinition = "TEXT")
     private String content;
 
@@ -44,10 +54,20 @@ public class TrackedEmail {
     @Column(nullable = false, unique = true)
     private String trackingId;
 
+    // Q5: Hibernate sets this from the DB clock, not JVM time
+    @CreationTimestamp
     @Column(nullable = false, updatable = false)
-    private LocalDateTime createdAt = LocalDateTime.now();
+    private LocalDateTime createdAt;
 
-    /** All open/click events for this email */
-    @OneToMany(mappedBy = "email", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
-    private List<TrackingEvent> events = new ArrayList<>();
+    /**
+     * F1: Soft-delete support.
+     * null = active, non-null = archived at this timestamp.
+     */
+    private LocalDateTime archivedAt;
+
+    /**
+     * F4: When the user has scheduled a follow-up reminder.
+     * null = no reminder scheduled.
+     */
+    private LocalDateTime scheduledFollowUpAt;
 }

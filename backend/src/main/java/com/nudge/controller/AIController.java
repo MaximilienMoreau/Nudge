@@ -11,7 +11,10 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
 /**
- * AI-powered follow-up generation endpoint.
+ * AI-powered follow-up generation and send-time endpoints.
+ *
+ * S9: engagementScore and openCount are no longer supplied by the client.
+ *     AIService fetches real values from the DB using emailId.
  */
 @RestController
 @RequestMapping("/api/ai")
@@ -26,23 +29,20 @@ public class AIController {
     /**
      * POST /api/ai/followup
      *
-     * Given context about the original email and engagement data,
-     * returns an AI-generated follow-up message and suggested subject line.
-     *
-     * Requires JWT authentication.
+     * Requires JWT. The request body only needs emailId and daysSinceSent.
+     * The server computes openCount and engagementScore from the database.
      */
     @PostMapping("/followup")
-    public ResponseEntity<FollowUpResponse> generateFollowUp(@Valid @RequestBody FollowUpRequest request) {
-        return ResponseEntity.ok(aiService.generateFollowUp(request));
+    public ResponseEntity<FollowUpResponse> generateFollowUp(
+            @Valid @RequestBody FollowUpRequest request,
+            @AuthenticationPrincipal UserDetails principal) {
+        return ResponseEntity.ok(aiService.generateFollowUp(request, principal.getUsername()));
     }
 
     /**
      * POST /api/ai/send-time
      *
-     * Analyses the authenticated user's historical open events and returns the
-     * day × hour combination with the highest recipient engagement as the
-     * recommended time to send or follow up.
-     *
+     * Analyses historical open events and returns the best day × hour to send.
      * No request body required — user identity comes from the JWT.
      */
     @PostMapping("/send-time")

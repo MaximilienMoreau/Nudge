@@ -7,11 +7,18 @@ import lombok.NoArgsConstructor;
 import java.time.LocalDateTime;
 
 /**
- * A single tracking event (e.g. email open) for a TrackedEmail.
- * Each row represents one pixel load / click.
+ * A single tracking event (e.g. email open or link click) for a TrackedEmail.
+ * Each row represents one pixel load or link click.
  */
 @Entity
-@Table(name = "tracking_events")
+@Table(
+    name = "tracking_events",
+    indexes = {
+        @Index(name = "idx_tracking_events_email_id",  columnList = "email_id"),
+        @Index(name = "idx_tracking_events_type",      columnList = "type"),
+        @Index(name = "idx_tracking_events_timestamp", columnList = "timestamp")
+    }
+)
 @Data
 @NoArgsConstructor
 public class TrackingEvent {

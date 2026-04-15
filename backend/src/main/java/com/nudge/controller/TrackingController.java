@@ -10,9 +10,11 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.net.URI;
+
 /**
- * Public tracking endpoint — no auth required.
- * Called automatically by email clients when the tracking pixel is loaded.
+ * Public tracking endpoints — no auth required.
+ * Called automatically by email clients or recipient browsers.
  */
 @RestController
 @RequestMapping("/track")
@@ -20,24 +22,20 @@ public class TrackingController {
 
     private static final Logger log = LoggerFactory.getLogger(TrackingController.class);
 
-    /**
-     * 1x1 transparent GIF pixel.
-     * This is the standard minimal GIF89a format (43 bytes).
-     */
+    /** 1x1 transparent GIF89a (43 bytes). */
     private static final byte[] TRACKING_PIXEL = {
-        0x47, 0x49, 0x46, 0x38, 0x39, 0x61, // GIF89a
-        0x01, 0x00,                           // Width = 1
-        0x01, 0x00,                           // Height = 1
-        (byte) 0x80, 0x00, 0x00,             // Global Color Table (2 colors)
-        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF, // Color 0: white
-        0x00, 0x00, 0x00,                     // Color 1: black
-        0x21, (byte) 0xF9, 0x04, 0x01,       // Graphic Control Extension
-        0x00, 0x00, 0x00, 0x00,              // Transparent color index 0, no delay
-        0x2C,                                 // Image Descriptor
-        0x00, 0x00, 0x00, 0x00,             // Left=0, Top=0
-        0x01, 0x00, 0x01, 0x00, 0x00,       // Width=1, Height=1, no local table
-        0x02, 0x02, 0x44, 0x01, 0x00,       // Image Data (LZW compressed)
-        0x3B                                  // GIF Trailer
+        0x47, 0x49, 0x46, 0x38, 0x39, 0x61,
+        0x01, 0x00, 0x01, 0x00,
+        (byte) 0x80, 0x00, 0x00,
+        (byte) 0xFF, (byte) 0xFF, (byte) 0xFF,
+        0x00, 0x00, 0x00,
+        0x21, (byte) 0xF9, 0x04, 0x01,
+        0x00, 0x00, 0x00, 0x00,
+        0x2C,
+        0x00, 0x00, 0x00, 0x00,
+        0x01, 0x00, 0x01, 0x00, 0x00,
+        0x02, 0x02, 0x44, 0x01, 0x00,
+        0x3B
     };
 
     private final TrackingService trackingService;
@@ -49,28 +47,50 @@ public class TrackingController {
     /**
      * GET /track/open/{trackingId}
      *
-     * Called when an email client loads the tracking pixel.
-     * - Records an OPEN event in the database
-     * - Sends a real-time WebSocket notification to the sender
-     * - Returns a 1x1 transparent GIF (so it's invisible to the recipient)
-     *
-     * Cache headers are set to prevent pre-fetching from skewing open counts.
+     * Records an OPEN event and returns a 1x1 transparent GIF.
+     * Cache headers prevent email clients from pre-fetching and skewing counts.
      */
     @GetMapping("/open/{trackingId}")
     public ResponseEntity<byte[]> trackOpen(@PathVariable String trackingId,
                                             HttpServletRequest request) {
         boolean found = trackingService.recordOpen(trackingId, request);
         if (!found) {
-            log.warn("Unknown tracking ID: {}", trackingId);
+            log.warn("Unknown tracking ID (open): {}", trackingId);
         }
 
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.parseMediaType("image/gif"));
-        // Prevent email clients and CDNs from caching the pixel
         headers.setCacheControl("no-cache, no-store, must-revalidate");
         headers.setPragma("no-cache");
         headers.setExpires(0);
 
         return new ResponseEntity<>(TRACKING_PIXEL, headers, HttpStatus.OK);
+    }
+
+    /**
+     * F2: GET /track/click/{trackingId}?url=https://original.link
+     *
+     * Records a CLICK event and 302-redirects to the original URL.
+     * Embed links in emails as: /track/click/{trackingId}?url=<encoded original URL>
+     */
+    @GetMapping("/click/{trackingId}")
+    public ResponseEntity<Void> trackClick(@PathVariable String trackingId,
+                                           @RequestParam(required = false) String url,
+                                           HttpServletRequest request) {
+        boolean found = (trackingService.recordClick(trackingId, request) != null);
+        if (!found) {
+            log.warn("Unknown tracking ID (click): {}", trackingId);
+        }
+
+        // Always redirect — even on unknown ID — to not break the link for the recipient
+        String destination = (url != null && !url.isBlank()) ? url : "about:blank";
+        HttpHeaders headers = new HttpHeaders();
+        try {
+            headers.setLocation(URI.create(destination));
+        } catch (IllegalArgumentException e) {
+            log.warn("Invalid redirect URL '{}', using blank", destination);
+            headers.setLocation(URI.create("about:blank"));
+        }
+        return new ResponseEntity<>(headers, HttpStatus.FOUND);
     }
 }

@@ -34,4 +34,7 @@ public class EmailDTO {
 
     /** The full tracking pixel URL to embed in outgoing emails */
     private String trackingPixelUrl;
+
+    /** F2: Base URL for click-tracked links — append the encoded destination URL */
+    private String clickTrackingBaseUrl;
 }
