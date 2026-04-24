@@ -122,11 +122,7 @@ public class EmailService {
 
     /** Retrieve a single email DTO by ID (validates ownership). */
     public EmailDTO getEmailById(Long emailId, String userEmail) {
-        TrackedEmail email = emailRepo.findById(emailId)
-                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
-        if (!email.getUser().getEmail().equals(userEmail)) {
-            throw new SecurityException("Access denied");
-        }
+        TrackedEmail email = findAndVerify(emailId, userEmail);
         List<TrackingEvent> events = eventRepo.findByEmailOrderByTimestampDesc(email);
         return toDTO(email, events);
     }
@@ -137,11 +133,7 @@ public class EmailService {
      */
     @Transactional
     public void archiveEmail(Long emailId, String userEmail) {
-        TrackedEmail email = emailRepo.findById(emailId)
-                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
-        if (!email.getUser().getEmail().equals(userEmail)) {
-            throw new SecurityException("Access denied");
-        }
+        TrackedEmail email = findAndVerify(emailId, userEmail);
         email.setArchivedAt(LocalDateTime.now());
         emailRepo.save(email);
         log.info("Email {} archived by {}", emailId, userEmail);
@@ -161,11 +153,7 @@ public class EmailService {
     /** Restore a soft-deleted email (clears archivedAt). */
     @Transactional
     public void restoreEmail(Long emailId, String userEmail) {
-        TrackedEmail email = emailRepo.findById(emailId)
-                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
-        if (!email.getUser().getEmail().equals(userEmail)) {
-            throw new SecurityException("Access denied");
-        }
+        TrackedEmail email = findAndVerify(emailId, userEmail);
         email.setArchivedAt(null);
         emailRepo.save(email);
         log.info("Email {} restored by {}", emailId, userEmail);
@@ -174,11 +162,7 @@ public class EmailService {
     /** Permanently delete an email and all its tracking events. */
     @Transactional
     public void permanentlyDeleteEmail(Long emailId, String userEmail) {
-        TrackedEmail email = emailRepo.findById(emailId)
-                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
-        if (!email.getUser().getEmail().equals(userEmail)) {
-            throw new SecurityException("Access denied");
-        }
+        TrackedEmail email = findAndVerify(emailId, userEmail);
         emailRepo.delete(email);
         log.info("Email {} permanently deleted by {}", emailId, userEmail);
     }
@@ -188,17 +172,22 @@ public class EmailService {
      */
     @Transactional
     public void scheduleFollowUp(Long emailId, String userEmail, LocalDateTime scheduledAt) {
-        TrackedEmail email = emailRepo.findById(emailId)
-                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
-        if (!email.getUser().getEmail().equals(userEmail)) {
-            throw new SecurityException("Access denied");
-        }
+        TrackedEmail email = findAndVerify(emailId, userEmail);
         email.setScheduledFollowUpAt(scheduledAt);
         emailRepo.save(email);
         log.info("Follow-up scheduled for email {} at {}", emailId, scheduledAt);
     }
 
     // ── Private helpers ──────────────────────────────────────────────────────
+
+    private TrackedEmail findAndVerify(Long emailId, String userEmail) {
+        TrackedEmail email = emailRepo.findById(emailId)
+                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
+        if (!email.getUser().getEmail().equals(userEmail)) {
+            throw new SecurityException("Access denied");
+        }
+        return email;
+    }
 
     /**
      * Q4: Batch-fetch events for a list of emails in one DB round-trip,
@@ -215,11 +204,16 @@ public class EmailService {
     /** Build the full DTO from the email and its pre-fetched events. */
     private EmailDTO toDTO(TrackedEmail email, List<TrackingEvent> events) {
         List<TrackingEvent> opens = events.stream()
-                .filter(e -> e.getType() == EventType.OPEN)   // Q8: enum identity
+                .filter(e -> e.getType() == EventType.OPEN)
+                .collect(Collectors.toList());
+        List<TrackingEvent> clicks = events.stream()
+                .filter(e -> e.getType() == EventType.CLICK)
                 .collect(Collectors.toList());
 
-        int openCount = opens.size();
-        LocalDateTime lastOpenedAt = opens.isEmpty() ? null : opens.get(0).getTimestamp();
+        int openCount  = opens.size();
+        int clickCount = clicks.size();
+        LocalDateTime lastOpenedAt  = opens.isEmpty()  ? null : opens.get(0).getTimestamp();
+        LocalDateTime lastClickedAt = clicks.isEmpty() ? null : clicks.get(0).getTimestamp();
         int score = leadScoringService.computeScore(events);
 
         EmailDTO dto = new EmailDTO();
@@ -233,6 +227,8 @@ public class EmailService {
         dto.setArchivedAt(email.getArchivedAt());
         dto.setOpenCount(openCount);
         dto.setLastOpenedAt(lastOpenedAt);
+        dto.setClickCount(clickCount);
+        dto.setLastClickedAt(lastClickedAt);
         dto.setLeadScore(score);
         dto.setStatus(resolveStatus(openCount));
         dto.setTrackingPixelUrl(buildPixelUrl(email.getTrackingId()));

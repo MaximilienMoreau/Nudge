@@ -16,6 +16,7 @@
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/service/EncryptionService.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/model/User.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/dto/AuthResponse.java
+/home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/config/StaticResourceConfig.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/controller/AuthController.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/repository/TrackedEmailRepository.java
 /home/maximilien/code/MaximilienMoreau/Nudge/backend/src/main/java/com/nudge/model/EventType.java

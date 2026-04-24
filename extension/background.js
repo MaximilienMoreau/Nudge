@@ -8,7 +8,15 @@
  *  - Persist auth token via chrome.storage.local
  */
 
-const API_BASE = 'http://localhost:8080';
+const DEFAULT_API_BASE = 'http://localhost:8080';
+
+async function getApiBase() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(['nudge_api_base'], r =>
+      resolve(r.nudge_api_base || DEFAULT_API_BASE)
+    );
+  });
+}
 
 // ── Track unsupported-platform tabs reported by content.js ────
 
@@ -56,12 +64,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 // ── Register email ────────────────────────────────────────────
 
 async function handleRegisterEmail(payload) {
-  const { token } = await getStoredCredentials();
+  const [apiBase, { token }] = await Promise.all([getApiBase(), getStoredCredentials()]);
   if (!token) {
     return { success: false, error: 'Not authenticated. Please sign in via the Nudge popup.' };
   }
 
-  const response = await fetch(`${API_BASE}/api/emails`, {
+  const response = await fetch(`${apiBase}/api/emails`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -75,21 +83,22 @@ async function handleRegisterEmail(payload) {
     return { success: false, error: err.error || 'Backend error' };
   }
 
+  // API returns List<EmailDTO> — one per recipient
   const data = await response.json();
+  const arr  = Array.isArray(data) ? data : [data];
   return {
     success: true,
-    trackingId:       data.trackingId,
-    trackingPixelUrl: data.trackingPixelUrl
+    results: arr.map(d => ({ trackingId: d.trackingId, trackingPixelUrl: d.trackingPixelUrl }))
   };
 }
 
 // ── Send-time suggestion ──────────────────────────────────────
 
 async function handleGetSendTime() {
-  const { token } = await getStoredCredentials();
+  const [apiBase, { token }] = await Promise.all([getApiBase(), getStoredCredentials()]);
   if (!token) return { suggestion: 'Sign in to get insights' };
 
-  const response = await fetch(`${API_BASE}/api/ai/send-time`, {
+  const response = await fetch(`${apiBase}/api/ai/send-time`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

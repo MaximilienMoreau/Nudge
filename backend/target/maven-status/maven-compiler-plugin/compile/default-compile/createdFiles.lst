@@ -18,7 +18,6 @@ com/nudge/dto/SendTimeResponse.class
 com/nudge/controller/GlobalExceptionHandler.class
 com/nudge/config/WebSocketConfig$1.class
 com/nudge/service/EmailService.class
-com/nudge/config/WebSocketConfig$1$1.class
 com/nudge/config/AppConfig.class
 com/nudge/security/UserDetailsServiceImpl.class
 com/nudge/model/EventType.class
@@ -39,5 +38,6 @@ com/nudge/model/TrackingEvent.class
 com/nudge/service/AuthService.class
 com/nudge/service/AIService$InternalFollowUpContext.class
 com/nudge/dto/FollowUpRequest.class
+com/nudge/config/StaticResourceConfig.class
 com/nudge/config/WebSocketConfig.class
 com/nudge/service/NotificationService.class

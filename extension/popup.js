@@ -7,14 +7,40 @@
  *  3. Shows the right tip: inline-injection tip vs. dashboard fallback
  */
 
-const API = 'http://localhost:8080';
+const DEFAULT_API = 'http://localhost:8080';
+
+function getApiBase() {
+  return new Promise(resolve => {
+    chrome.storage.local.get(['nudge_api_base'], r =>
+      resolve(r.nudge_api_base || DEFAULT_API)
+    );
+  });
+}
 
 document.addEventListener('DOMContentLoaded', async () => {
+  const apiBase = await getApiBase();
+
+  // Populate server URL field
+  document.getElementById('server-url').value = apiBase;
+
+  // Wire up dynamic dashboard link
+  document.getElementById('dashboard-link').href = `${apiBase}/dashboard.html`;
+
   await Promise.all([
     checkAuthStatus(),
     detectPlatform()
   ]);
 });
+
+async function saveServerUrl() {
+  const val = document.getElementById('server-url').value.trim().replace(/\/$/, '');
+  if (!val.startsWith('http')) return;
+  await chrome.storage.local.set({ nudge_api_base: val });
+  document.getElementById('dashboard-link').href = `${val}/dashboard.html`;
+  const btn = document.querySelector('[onclick="saveServerUrl()"]');
+  btn.textContent = '✓';
+  setTimeout(() => { btn.textContent = 'Save'; }, 1500);
+}
 
 // ── Auth ──────────────────────────────────────────────────────
 
@@ -40,7 +66,8 @@ async function login() {
   btn.disabled    = true;
 
   try {
-    const res  = await fetch(`${API}/api/auth/login`, {
+    const apiBase = await getApiBase();
+    const res  = await fetch(`${apiBase}/api/auth/login`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password })

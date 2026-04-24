@@ -131,7 +131,11 @@ public class EmailController {
         if (scheduledAt == null || scheduledAt.isBlank()) {
             return ResponseEntity.badRequest().body(Map.of("error", "scheduledAt is required"));
         }
-        emailService.scheduleFollowUp(id, user.getUsername(), LocalDateTime.parse(scheduledAt));
+        LocalDateTime parsedAt = LocalDateTime.parse(scheduledAt);
+        if (!parsedAt.isAfter(LocalDateTime.now())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "scheduledAt must be in the future"));
+        }
+        emailService.scheduleFollowUp(id, user.getUsername(), parsedAt);
         return ResponseEntity.ok(Map.of("message", "Follow-up scheduled for " + scheduledAt));
     }
 }

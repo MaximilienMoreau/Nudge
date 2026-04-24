@@ -16,6 +16,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
+import jakarta.servlet.http.Cookie;
 import java.io.IOException;
 
 /**
@@ -73,8 +74,19 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         filterChain.doFilter(request, response);
     }
 
-    /** Extract the raw JWT from "Authorization: Bearer <token>" header. */
+    /**
+     * Extract the raw JWT: httpOnly cookie first (web frontend),
+     * then Authorization: Bearer header (extension / API clients).
+     */
     private String extractToken(HttpServletRequest request) {
+        Cookie[] cookies = request.getCookies();
+        if (cookies != null) {
+            for (Cookie cookie : cookies) {
+                if ("nudge_jwt".equals(cookie.getName())) {
+                    return cookie.getValue();
+                }
+            }
+        }
         String header = request.getHeader("Authorization");
         if (StringUtils.hasText(header) && header.startsWith("Bearer ")) {
             return header.substring(7);

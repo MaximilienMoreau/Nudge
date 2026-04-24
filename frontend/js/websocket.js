@@ -15,19 +15,15 @@ let retryDelay    = 5000;   // U6: starts at 5s
 const MAX_DELAY   = 60000;
 
 function connectWebSocket() {
-  const wsToken = localStorage.getItem('nudge_token');
-  if (!wsToken) return;
+  // Token is in an httpOnly cookie — no need to pass it explicitly.
+  // SockJS sends cookies automatically for same-origin requests.
+  if (!localStorage.getItem('nudge_email')) return;
 
-  // S3: Pass JWT as query param for HTTP-level handshake validation
-  const socket = new SockJS(NUDGE_CONFIG.WS_URL + '?token=' + encodeURIComponent(wsToken));
+  const socket = new SockJS(NUDGE_CONFIG.WS_URL);
   stompClient  = Stomp.over(socket);
-  stompClient.debug = () => {};   // Suppress noisy debug logs
+  stompClient.debug = () => {};
 
-  stompClient.connect(
-    { Authorization: `Bearer ${wsToken}` },
-    onConnected,
-    onError
-  );
+  stompClient.connect({}, onConnected, onError);
 }
 
 function onConnected() {
@@ -45,10 +41,11 @@ function onConnected() {
 }
 
 function onError(err) {
-  setWsDot(false);
+  const delaySec = Math.round(retryDelay / 1000);
+  setWsDot(false, `Reconnecting in ${delaySec}s…`);
   console.warn('[Nudge WS] Connection error — retrying in', retryDelay, 'ms', err);
   setTimeout(() => {
-    retryDelay = Math.min(retryDelay * 2, MAX_DELAY); // U6: exponential backoff
+    retryDelay = Math.min(retryDelay * 2, MAX_DELAY);
     connectWebSocket();
   }, retryDelay);
 }
@@ -70,7 +67,7 @@ async function handleNotification(notification) {
     // P1: Fetch only the updated email DTO and patch the table row
     try {
       const res = await fetch(`${NUDGE_CONFIG.API_BASE}/api/emails/${emailId}`, {
-        headers: { 'Authorization': `Bearer ${localStorage.getItem('nudge_token')}` }
+        credentials: 'include'
       });
       if (res.ok && typeof updateEmailRow === 'function') {
         updateEmailRow(await res.json());
@@ -94,12 +91,12 @@ async function handleNotification(notification) {
 
 // ── WS indicator ─────────────────────────────────────────────
 
-function setWsDot(connected) {
+function setWsDot(connected, label = connected ? 'Live' : 'Reconnecting…') {
   const dot   = document.getElementById('ws-dot');
-  const label = document.getElementById('ws-label');
+  const labelEl = document.getElementById('ws-label');
   if (!dot) return;
   dot.classList.toggle('connected', connected);
-  label.textContent = connected ? 'Live' : 'Reconnecting…';
+  labelEl.textContent = label;
 }
 
 // Boot when page loads

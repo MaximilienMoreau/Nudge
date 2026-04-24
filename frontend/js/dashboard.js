@@ -15,10 +15,10 @@
 
 // ── Auth guard ────────────────────────────────────────────────
 
-const token    = localStorage.getItem('nudge_token');
 const userEmail = localStorage.getItem('nudge_email');
 
-if (!token) window.location.href = 'index.html';
+// Token is in an httpOnly cookie — redirect if email not present (not logged in)
+if (!userEmail) window.location.href = 'index.html';
 
 // ── State ─────────────────────────────────────────────────────
 
@@ -72,7 +72,7 @@ function showView(name) {
 
 async function loadEmails(page = 0) {
   const tbody = document.getElementById('emails-tbody');
-  tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="spinner"></div></div></td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="spinner"></div></div></td></tr>`;
 
   try {
     const res = await authFetch(`/api/emails?page=${page}&size=50`);
@@ -90,7 +90,7 @@ async function loadEmails(page = 0) {
       renderPagination(pageData.number, pageData.totalPages);
     }
   } catch (err) {
-    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
+    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">
       <div class="empty-icon">⚠️</div>
       <h3>Could not load emails</h3>
       <p>${escHtml(err.message)}</p>
@@ -159,7 +159,7 @@ function renderEmailTable(emails) {
   const tbody = document.getElementById('emails-tbody');
 
   if (emails.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="8">
+    tbody.innerHTML = `<tr><td colspan="9">
       <div class="empty-state">
         <div class="empty-icon">📭</div>
         <h3>No tracked emails yet</h3>
@@ -186,6 +186,11 @@ function renderEmailTable(emails) {
       <td>${statusBadge(email.status)}</td>
       <td>${scoreBar(email.leadScore)}</td>
       <td style="color:var(--muted);white-space:nowrap">${email.lastOpenedAt ? formatDate(email.lastOpenedAt) : '—'}</td>
+      <td style="color:var(--muted);text-align:center">
+        ${email.clickCount > 0
+          ? `<span title="Last clicked: ${email.lastClickedAt ? formatDate(email.lastClickedAt) : '—'}">🔗 ${email.clickCount}</span>`
+          : '—'}
+      </td>
       <td>
         <button class="btn btn-sm btn-secondary" onclick="openFollowUpModal(${email.id})">
           🤖 Follow Up
@@ -367,8 +372,8 @@ function showTrackResult(data, resultId, urlId, htmlId) {
   // U1: Wire up copy buttons
   const copyUrlBtn  = document.getElementById(urlId + '-copy');
   const copyHtmlBtn = document.getElementById(htmlId + '-copy');
-  if (copyUrlBtn)  copyUrlBtn.onclick  = () => copyText(pixelUrl, 'Pixel URL copied!');
-  if (copyHtmlBtn) copyHtmlBtn.onclick = () => copyText(htmlSnip, 'HTML snippet copied!');
+  if (copyUrlBtn)  copyUrlBtn.onclick  = () => copyText(pixelUrl, 'Pixel URL copied!', copyUrlBtn);
+  if (copyHtmlBtn) copyHtmlBtn.onclick = () => copyText(htmlSnip, 'HTML snippet copied!', copyHtmlBtn);
 }
 
 // ── F1: Archive email ─────────────────────────────────────────
@@ -527,7 +532,8 @@ async function generateFollowUp() {
 function copyFollowUp() {
   const text = `Subject: ${document.getElementById('followup-subject').textContent}\n\n` +
                document.getElementById('followup-text').textContent;
-  copyText(text, 'Follow-up copied to clipboard');
+  const btn = document.querySelector('[onclick="copyFollowUp()"]');
+  copyText(text, 'Follow-up copied to clipboard', btn);
 }
 
 // ── Modal helpers ─────────────────────────────────────────────
@@ -555,15 +561,17 @@ function closeModalOnBg(e) {
 
 // ── Auth + fetch wrapper ──────────────────────────────────────
 
-function authFetch(path, options = {}) {
-  return fetch(NUDGE_CONFIG.API_BASE + path, {
+async function authFetch(path, options = {}) {
+  const res = await fetch(NUDGE_CONFIG.API_BASE + path, {
     ...options,
+    credentials: 'include',   // sends the httpOnly cookie automatically
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
       ...(options.headers || {})
     }
   });
+  if (res.status === 401) { window.location.href = 'index.html'; }
+  return res;
 }
 
 function logout() {
@@ -586,7 +594,7 @@ function showToast(title, message, type = 'info') {
       <div class="toast-msg">${escHtml(message)}</div>
     </div>`;
   document.getElementById('toast-container').appendChild(el);
-  setTimeout(() => el.remove(), 5000);
+  setTimeout(() => el.remove(), 8000);
 }
 
 // ── Rendering helpers ─────────────────────────────────────────
@@ -638,8 +646,15 @@ function escHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
-function copyText(text, successMsg) {
+function copyText(text, successMsg, btn) {
   navigator.clipboard.writeText(text)
-    .then(() => showToast('Copied', successMsg, 'success'))
+    .then(() => {
+      showToast('Copied', successMsg, 'success');
+      if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = '✓ Copied!';
+        setTimeout(() => { btn.textContent = orig; }, 2000);
+      }
+    })
     .catch(() => showToast('Error', 'Could not copy to clipboard', 'error'));
 }
