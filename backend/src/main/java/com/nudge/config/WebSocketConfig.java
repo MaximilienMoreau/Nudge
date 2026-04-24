@@ -5,8 +5,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
+import jakarta.servlet.http.Cookie;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
+import org.springframework.http.server.ServletServerHttpRequest;
 import org.springframework.messaging.Message;
 import org.springframework.messaging.MessageChannel;
 import org.springframework.messaging.simp.config.ChannelRegistration;
@@ -82,17 +84,24 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                         MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
 
                 if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
+                    // Try Authorization header (extension / non-cookie clients)
                     String authHeader = accessor.getFirstNativeHeader("Authorization");
                     if (authHeader != null && authHeader.startsWith("Bearer ")) {
                         String token = authHeader.substring(7);
                         if (jwtUtil.isValid(token)) {
                             String email = jwtUtil.extractEmail(token);
-                            accessor.setUser(new Principal() {
-                                @Override public String getName() { return email; }
-                            });
-                            log.debug("WebSocket STOMP authenticated: {}", email);
+                            accessor.setUser(() -> email);
+                            log.debug("WebSocket STOMP authenticated via Bearer: {}", email);
                         } else {
-                            log.warn("WebSocket STOMP CONNECT rejected: invalid token");
+                            log.warn("WebSocket STOMP CONNECT rejected: invalid Bearer token");
+                        }
+                    } else {
+                        // Cookie-based auth: user was set during HTTP handshake
+                        Map<String, Object> sessionAttrs = accessor.getSessionAttributes();
+                        if (sessionAttrs != null && sessionAttrs.containsKey("wsUser")) {
+                            String email = (String) sessionAttrs.get("wsUser");
+                            accessor.setUser(() -> email);
+                            log.debug("WebSocket STOMP authenticated via cookie: {}", email);
                         }
                     }
                 }
@@ -112,7 +121,19 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         @Override
         public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
                                        WebSocketHandler wsHandler, Map<String, Object> attributes) {
-            // Extract ?token= from the SockJS URL
+            // 1. Try httpOnly cookie (web frontend)
+            if (request instanceof ServletServerHttpRequest servletRequest) {
+                Cookie[] cookies = servletRequest.getServletRequest().getCookies();
+                if (cookies != null) {
+                    for (Cookie cookie : cookies) {
+                        if ("nudge_jwt".equals(cookie.getName()) && jwtUtil.isValid(cookie.getValue())) {
+                            attributes.put("wsUser", jwtUtil.extractEmail(cookie.getValue()));
+                            return true;
+                        }
+                    }
+                }
+            }
+            // 2. Fall back to ?token= query param (extension / non-cookie clients)
             String query = request.getURI().getQuery();
             if (query != null) {
                 for (String param : query.split("&")) {
@@ -125,7 +146,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
                     }
                 }
             }
-            log.warn("WebSocket handshake rejected: missing or invalid ?token= param");
+            log.warn("WebSocket handshake rejected: no valid cookie or ?token= param");
             return false;
         }
 

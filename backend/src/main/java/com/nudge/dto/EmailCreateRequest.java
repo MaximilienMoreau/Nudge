@@ -2,6 +2,7 @@ package com.nudge.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import lombok.Data;
 
 import java.util.List;
@@ -11,9 +12,11 @@ import java.util.List;
 public class EmailCreateRequest {
 
     @NotBlank
+    @Size(max = 500, message = "Subject must be under 500 characters")
     private String subject;
 
     /** Full email body — used later for AI follow-up generation (stored encrypted). */
+    @Size(max = 100_000, message = "Content must be under 100 000 characters")
     private String content;
 
     /**

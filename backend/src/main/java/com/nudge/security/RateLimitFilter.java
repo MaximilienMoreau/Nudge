@@ -6,6 +6,7 @@ import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -93,6 +94,20 @@ public class RateLimitFilter implements Filter {
             slot[0]++;
             return slot[0] > limit;
         }
+    }
+
+    /** Purge expired windows every 10 minutes to prevent unbounded memory growth. */
+    @Scheduled(fixedDelay = 600_000)
+    void evictExpiredEntries() {
+        long now = System.currentTimeMillis();
+        int before = counters.size();
+        counters.entrySet().removeIf(entry -> {
+            synchronized (entry.getValue()) {
+                return now - entry.getValue()[1] > WINDOW_MS;
+            }
+        });
+        int removed = before - counters.size();
+        if (removed > 0) log.debug("RateLimitFilter evicted {} expired entries", removed);
     }
 
     private String getClientIp(HttpServletRequest request) {

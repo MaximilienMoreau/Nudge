@@ -50,21 +50,29 @@ const ADAPTERS = {
     extractSubject(c) {
       return c.querySelector('input[name="subjectbox"]')?.value.trim() ?? '';
     },
-    extractRecipient(c) {
-      // Recipient chips carry the email in data-hovercard-id
-      const chip = c.querySelector('[data-hovercard-id]');
-      const hoverId = chip?.getAttribute('data-hovercard-id') ?? '';
-      if (hoverId.includes('@')) return hoverId;
+    extractRecipients(c) {
+      const emails = new Set();
+      c.querySelectorAll('[data-hovercard-id]').forEach(chip => {
+        const h = chip.getAttribute('data-hovercard-id') ?? '';
+        if (h.includes('@')) emails.add(h);
+      });
+      if (emails.size) return [...emails];
 
       const toInput = c.querySelector('[aria-label="To"], [name="to"]');
-      if (toInput?.value) return toInput.value.trim();
+      if (toInput?.value) {
+        toInput.value.split(',').forEach(e => {
+          const t = e.trim();
+          if (t.includes('@')) emails.add(t);
+        });
+        if (emails.size) return [...emails];
+      }
 
       const toArea = c.querySelector('.vO');
       if (toArea) {
-        const m = toArea.innerText.match(/[^\s@]+@[^\s@]+\.[^\s@]+/);
-        if (m) return m[0];
+        const matches = toArea.innerText.match(/[^\s@,]+@[^\s@,]+\.[^\s@,]+/g) ?? [];
+        matches.forEach(m => emails.add(m));
       }
-      return '';
+      return [...emails];
     },
     extractBody(c) {
       return c.querySelector('[contenteditable="true"][aria-label]')?.innerText.trim() ?? '';
@@ -101,21 +109,22 @@ const ADAPTERS = {
         c.querySelector('input[aria-label*="ubject"], input[placeholder*="ubject"]')?.value.trim() ?? ''
       );
     },
-    extractRecipient(c) {
-      // Try the visible "To" input
+    extractRecipients(c) {
+      const emails = new Set();
+      c.querySelectorAll('[class*="recipientWell"] [title], [class*="Persona"] [data-lpc-hover-target]')
+        .forEach(chip => {
+          const txt = chip.getAttribute('title') || chip.textContent;
+          const m = txt?.match(/[^\s@;]+@[^\s@;]+\.[^\s@;]+/);
+          if (m) emails.add(m[0]);
+        });
+      if (emails.size) return [...emails];
+
       const toInput = c.querySelector('[aria-label="To"], input[placeholder*="To"]');
       if (toInput) {
-        const m = (toInput.value || toInput.innerText || '').match(/[^\s@;]+@[^\s@;]+\.[^\s@;]+/);
-        if (m) return m[0];
+        const text = toInput.value || toInput.innerText || '';
+        (text.match(/[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+/g) ?? []).forEach(e => emails.add(e));
       }
-      // Outlook renders recipients as persona chips inside the "To" well
-      const chips = c.querySelectorAll('[class*="recipientWell"] [title], [class*="Persona"] [data-lpc-hover-target]');
-      for (const chip of chips) {
-        const txt = chip.getAttribute('title') || chip.textContent;
-        const m = txt?.match(/[^\s@;]+@[^\s@;]+\.[^\s@;]+/);
-        if (m) return m[0];
-      }
-      return '';
+      return [...emails];
     },
     extractBody(c) {
       return (
@@ -221,12 +230,11 @@ function mountSidebar(container, sendBtn) {
   sendBtn.addEventListener('click', async () => {
     if (!checkbox.checked) return;
 
-    const subject   = adapter.extractSubject(container);
-    const recipient = adapter.extractRecipient(container);
-    const content   = adapter.extractBody(container);
+    const subject    = adapter.extractSubject(container);
+    const recipients = adapter.extractRecipients(container);
+    const content    = adapter.extractBody(container);
 
-    // Nothing to track — skip silently
-    if (!subject && !recipient) return;
+    if (!subject && recipients.length === 0) return;
 
     statusPill.textContent = 'Registering…';
     statusPill.className   = 'nudge-pill nudge-pending';
@@ -234,14 +242,14 @@ function mountSidebar(container, sendBtn) {
     try {
       const res = await chrome.runtime.sendMessage({
         type: 'REGISTER_EMAIL',
-        payload: { subject, recipientEmail: recipient, content }
+        payload: { subject, recipientEmails: recipients, content }
       });
 
       if (res.success) {
-        adapter.injectPixel(container, res.trackingPixelUrl);
-        statusPill.textContent = '✅ Tracked!';
+        res.results.forEach(r => adapter.injectPixel(container, r.trackingPixelUrl));
+        const count = res.results.length;
+        statusPill.textContent = count > 1 ? `✅ ${count} tracked!` : '✅ Tracked!';
         statusPill.className   = 'nudge-pill nudge-on';
-        console.log('[Nudge] Registered email, id:', res.trackingId);
       } else {
         statusPill.textContent = '⚠️ ' + (res.error ?? 'Error');
         statusPill.className   = 'nudge-pill nudge-off';

@@ -37,7 +37,7 @@ async function handleLogin(e) {
     const data = await res.json();
     if (!res.ok) { showError(errEl, data.error || 'Login failed'); return; }
 
-    localStorage.setItem('nudge_token',  data.token);
+    // Token is in an httpOnly cookie — only store non-sensitive info
     localStorage.setItem('nudge_email',  data.email);
     localStorage.setItem('nudge_userId', data.userId);
     window.location.href = 'dashboard.html';
@@ -80,7 +80,7 @@ async function handleRegister(e) {
     const data = await res.json();
     if (!res.ok) { showError(errEl, data.error || 'Registration failed'); return; }
 
-    localStorage.setItem('nudge_token',  data.token);
+    // Token is in an httpOnly cookie — only store non-sensitive info
     localStorage.setItem('nudge_email',  data.email);
     localStorage.setItem('nudge_userId', data.userId);
     window.location.href = 'dashboard.html';
@@ -147,7 +147,7 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-// Redirect if already logged in
-if (localStorage.getItem('nudge_token')) {
+// Redirect if already logged in (cookie still valid — email present = likely active session)
+if (localStorage.getItem('nudge_email')) {
   window.location.href = 'dashboard.html';
 }

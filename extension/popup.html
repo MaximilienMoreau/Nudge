@@ -194,10 +194,26 @@
       ⚠️ Direct injection is not supported on this page. Use the web dashboard to track emails manually.
     </div>
 
-    <a href="http://localhost:8080/dashboard.html" target="_blank" class="btn" style="margin-top:0">
+    <a id="dashboard-link" href="#" target="_blank" class="btn" style="margin-top:0">
       Open Dashboard ↗
     </a>
     <button class="btn secondary" onclick="logout()">Sign Out</button>
+  </div>
+
+  <!-- Server URL setting (always visible at bottom) -->
+  <div style="margin-top:.75rem;padding-top:.6rem;border-top:1px solid var(--border)">
+    <label style="color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em">
+      Server URL
+    </label>
+    <div style="display:flex;gap:.4rem;margin-top:.3rem">
+      <input type="url" id="server-url" placeholder="http://localhost:8080"
+             style="flex:1;font-size:.75rem;padding:.35rem .5rem"/>
+      <button onclick="saveServerUrl()"
+              style="padding:.35rem .6rem;background:var(--primary);color:#fff;border:none;
+                     border-radius:6px;cursor:pointer;font-size:.75rem;font-weight:600;white-space:nowrap">
+        Save
+      </button>
+    </div>
   </div>
 
 </body>

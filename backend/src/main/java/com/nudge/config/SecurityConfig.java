@@ -64,6 +64,7 @@ public class SecurityConfig {
             .authorizeHttpRequests(auth -> auth
                 .requestMatchers("/api/auth/**", "/track/**").permitAll()
                 .requestMatchers("/ws/**").permitAll()
+                .requestMatchers("/", "/*.html", "/js/**", "/css/**", "/images/**", "/favicon.ico").permitAll()
                 .anyRequest().authenticated()
             )
             .authenticationProvider(authenticationProvider())
@@ -78,19 +79,15 @@ public class SecurityConfig {
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration config = new CorsConfiguration();
 
-        // S2: Read allowed origins from config — wildcards are fine because we
-        //     do NOT use allowCredentials(true) (we use JWT, not cookies).
+        // Credentials (httpOnly cookie) require explicit origins — wildcards are forbidden by spec.
+        // setAllowedOriginPatterns supports wildcards AND works with allowCredentials(true).
         List<String> origins = Arrays.asList(corsAllowedOrigins.split(","));
-        if (origins.size() == 1 && origins.get(0).equals("*")) {
-            config.setAllowedOriginPatterns(List.of("*"));
-        } else {
-            config.setAllowedOrigins(origins);
-        }
+        config.setAllowedOriginPatterns(origins);
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
         config.setAllowedHeaders(List.of("*"));
-        // NOT setting allowCredentials — we use JWT in Authorization headers, not cookies
-        config.setAllowCredentials(false);
+        config.setAllowCredentials(true);
+        config.setExposedHeaders(List.of("Set-Cookie"));
 
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", config);
