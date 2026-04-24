@@ -147,6 +147,42 @@ public class EmailService {
         log.info("Email {} archived by {}", emailId, userEmail);
     }
 
+    /** Return all archived emails for the authenticated user. */
+    public List<EmailDTO> getArchivedEmailsForUser(String userEmail) {
+        User user = userRepo.findByEmail(userEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
+        List<TrackedEmail> emails = emailRepo.findByUserAndArchivedAtIsNotNullOrderByArchivedAtDesc(user);
+        Map<Long, List<TrackingEvent>> eventsByEmail = batchFetchEvents(emails);
+        return emails.stream()
+                .map(e -> toDTO(e, eventsByEmail.getOrDefault(e.getId(), List.of())))
+                .collect(Collectors.toList());
+    }
+
+    /** Restore a soft-deleted email (clears archivedAt). */
+    @Transactional
+    public void restoreEmail(Long emailId, String userEmail) {
+        TrackedEmail email = emailRepo.findById(emailId)
+                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
+        if (!email.getUser().getEmail().equals(userEmail)) {
+            throw new SecurityException("Access denied");
+        }
+        email.setArchivedAt(null);
+        emailRepo.save(email);
+        log.info("Email {} restored by {}", emailId, userEmail);
+    }
+
+    /** Permanently delete an email and all its tracking events. */
+    @Transactional
+    public void permanentlyDeleteEmail(Long emailId, String userEmail) {
+        TrackedEmail email = emailRepo.findById(emailId)
+                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + emailId));
+        if (!email.getUser().getEmail().equals(userEmail)) {
+            throw new SecurityException("Access denied");
+        }
+        emailRepo.delete(email);
+        log.info("Email {} permanently deleted by {}", emailId, userEmail);
+    }
+
     /**
      * F4: Schedule a follow-up reminder for an email.
      */
@@ -194,6 +230,7 @@ public class EmailService {
         dto.setRecipientEmail(email.getRecipientEmail());
         dto.setTrackingId(email.getTrackingId());
         dto.setCreatedAt(email.getCreatedAt());
+        dto.setArchivedAt(email.getArchivedAt());
         dto.setOpenCount(openCount);
         dto.setLastOpenedAt(lastOpenedAt);
         dto.setLeadScore(score);

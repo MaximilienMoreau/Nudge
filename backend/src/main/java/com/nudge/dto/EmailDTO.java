@@ -16,6 +16,7 @@ public class EmailDTO {
     private String recipientEmail;
     private String trackingId;
     private LocalDateTime createdAt;
+    private LocalDateTime archivedAt;
 
     /** How many times the tracking pixel has been loaded */
     private int openCount;

@@ -39,6 +39,9 @@
       <div class="nav-item" onclick="showView('insights')">
         <span>🧠</span> AI Insights
       </div>
+      <div class="nav-item" onclick="showView('archived')">
+        <span>🗂</span> Archived
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -238,6 +241,33 @@
                 <td style="padding:.5rem"><span class="badge badge-gray">Dashboard fallback</span></td>
                 <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
               </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Archived view ──────────────────────────────────── -->
+    <div class="content" id="view-archived" style="display:none">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Archived Emails</span>
+          <button class="btn btn-ghost btn-sm" onclick="loadArchivedEmails()">↻ Refresh</button>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>Recipient</th>
+                <th>Sent</th>
+                <th>Archived</th>
+                <th>Opens</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="archived-tbody">
+              <tr><td colspan="6"><div class="empty-state"><div class="spinner"></div></div></td></tr>
             </tbody>
           </table>
         </div>
