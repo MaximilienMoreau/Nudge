@@ -29,6 +29,9 @@ public interface TrackedEmailRepository extends JpaRepository<TrackedEmail, Long
      */
     List<TrackedEmail> findByScheduledFollowUpAtIsNotNullAndArchivedAtIsNull();
 
+    /** Archived emails for a user, most recently archived first. */
+    List<TrackedEmail> findByUserAndArchivedAtIsNotNullOrderByArchivedAtDesc(User user);
+
     /** Look up an email by its unique tracking UUID (used in pixel endpoint). */
     Optional<TrackedEmail> findByTrackingId(String trackingId);
 }

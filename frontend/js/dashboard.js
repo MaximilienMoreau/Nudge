@@ -53,17 +53,19 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── View switching ────────────────────────────────────────────
 
-const VIEW_TITLES = { emails: 'Email Dashboard', track: 'Track New Email', insights: 'AI Insights' };
+const VIEW_TITLES = { emails: 'Email Dashboard', track: 'Track New Email', insights: 'AI Insights', archived: 'Archived Emails' };
+const ALL_VIEWS   = ['emails', 'track', 'insights', 'archived'];
 
 function showView(name) {
-  ['emails', 'track', 'insights'].forEach(v => {
+  ALL_VIEWS.forEach(v => {
     document.getElementById(`view-${v}`).style.display = v === name ? '' : 'none';
   });
   document.getElementById('view-title').textContent = VIEW_TITLES[name] ?? name;
   document.querySelectorAll('.nav-item').forEach((el, i) => {
-    el.classList.toggle('active', ['emails', 'track', 'insights'][i] === name);
+    el.classList.toggle('active', ALL_VIEWS[i] === name);
   });
   if (name === 'insights') loadSendTime();
+  if (name === 'archived') loadArchivedEmails();
 }
 
 // ── Load emails (paginated) ───────────────────────────────────
@@ -243,8 +245,8 @@ async function loadSendTime() {
 
   try {
     const res  = await authFetch('/api/ai/send-time', { method: 'POST' });
+    if (!res.ok) throw new Error(`Backend error ${res.status}`);
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Failed to load');
 
     if (!data.hasData) {
       body.innerHTML = `
@@ -380,6 +382,72 @@ async function archiveEmail(emailId) {
     renderEmailTable(filteredEmails);
     updateStats(allEmails);
     showToast('Archived', 'Email removed from your dashboard.', 'success');
+  } catch (err) {
+    showToast('Error', err.message, 'error');
+  }
+}
+
+// ── Archived emails ───────────────────────────────────────────
+
+async function loadArchivedEmails() {
+  const tbody = document.getElementById('archived-tbody');
+  tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="spinner"></div></div></td></tr>`;
+
+  try {
+    const res = await authFetch('/api/emails/archived');
+    if (!res.ok) throw new Error('Failed to load archived emails');
+    const emails = await res.json();
+
+    if (emails.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6">
+        <div class="empty-state">
+          <div class="empty-icon">🗂</div>
+          <h3>No archived emails</h3>
+          <p style="color:var(--muted)">Emails you archive will appear here.</p>
+        </div>
+      </td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = emails.map(e => `
+      <tr>
+        <td style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+            title="${escHtml(e.subject)}">${escHtml(e.subject)}</td>
+        <td style="color:var(--muted)">${escHtml(e.recipientEmail)}</td>
+        <td style="color:var(--muted);white-space:nowrap">${formatDate(e.createdAt)}</td>
+        <td style="color:var(--muted);white-space:nowrap">${formatDate(e.archivedAt)}</td>
+        <td style="color:var(--muted)">${e.openCount}</td>
+        <td style="display:flex;gap:.4rem">
+          <button class="btn btn-sm btn-secondary" onclick="restoreEmail(${e.id})">↩ Restore</button>
+          <button class="btn btn-sm btn-ghost" style="color:#ef4444"
+                  onclick="permanentDeleteEmail(${e.id})">🗑 Delete</button>
+        </td>
+      </tr>`).join('');
+  } catch (err) {
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
+      <div class="empty-icon">⚠️</div><p style="color:var(--muted)">${escHtml(err.message)}</p>
+    </div></td></tr>`;
+  }
+}
+
+async function restoreEmail(emailId) {
+  try {
+    const res = await authFetch(`/api/emails/${emailId}/restore`, { method: 'POST' });
+    if (!res.ok) throw new Error('Failed to restore');
+    showToast('Restored', 'Email moved back to your dashboard.', 'success');
+    loadArchivedEmails();
+  } catch (err) {
+    showToast('Error', err.message, 'error');
+  }
+}
+
+async function permanentDeleteEmail(emailId) {
+  if (!confirm('Permanently delete this email and all its tracking data? This cannot be undone.')) return;
+  try {
+    const res = await authFetch(`/api/emails/${emailId}/permanent`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Failed to delete');
+    showToast('Deleted', 'Email permanently deleted.', 'success');
+    loadArchivedEmails();
   } catch (err) {
     showToast('Error', err.message, 'error');
   }

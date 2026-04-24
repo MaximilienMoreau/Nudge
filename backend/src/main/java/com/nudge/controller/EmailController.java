@@ -84,6 +84,40 @@ public class EmailController {
     }
 
     /**
+     * GET /api/emails/archived
+     * Returns all soft-deleted emails for the authenticated user.
+     */
+    @GetMapping("/archived")
+    public ResponseEntity<List<EmailDTO>> listArchivedEmails(
+            @AuthenticationPrincipal UserDetails user) {
+        return ResponseEntity.ok(emailService.getArchivedEmailsForUser(user.getUsername()));
+    }
+
+    /**
+     * POST /api/emails/{id}/restore
+     * Restores a previously archived email (clears archivedAt).
+     */
+    @PostMapping("/{id}/restore")
+    public ResponseEntity<Map<String, String>> restoreEmail(
+            @AuthenticationPrincipal UserDetails user,
+            @PathVariable Long id) {
+        emailService.restoreEmail(id, user.getUsername());
+        return ResponseEntity.ok(Map.of("message", "Email restored"));
+    }
+
+    /**
+     * DELETE /api/emails/{id}/permanent
+     * Permanently deletes an email and all its tracking events.
+     */
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<Map<String, String>> permanentlyDeleteEmail(
+            @AuthenticationPrincipal UserDetails user,
+            @PathVariable Long id) {
+        emailService.permanentlyDeleteEmail(id, user.getUsername());
+        return ResponseEntity.ok(Map.of("message", "Email permanently deleted"));
+    }
+
+    /**
      * POST /api/emails/{id}/schedule
      * F4: Schedule a follow-up reminder at the given ISO-8601 date-time.
      * Body: { "scheduledAt": "2026-04-20T09:00:00" }
