@@ -2,6 +2,7 @@ package com.nudge.controller;
 
 import com.nudge.dto.EmailCreateRequest;
 import com.nudge.dto.EmailDTO;
+import com.nudge.dto.ScheduleFollowUpRequest;
 import com.nudge.service.EmailService;
 import jakarta.validation.Valid;
 import org.springframework.data.domain.Page;
@@ -12,7 +13,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -121,21 +121,16 @@ public class EmailController {
      * POST /api/emails/{id}/schedule
      * F4: Schedule a follow-up reminder at the given ISO-8601 date-time.
      * Body: { "scheduledAt": "2026-04-20T09:00:00" }
+     *
+     * Validation (@NotNull, @Future) is handled by ScheduleFollowUpRequest,
+     * replacing the previous manual null-check and date comparison.
      */
     @PostMapping("/{id}/schedule")
     public ResponseEntity<Map<String, String>> scheduleFollowUp(
             @AuthenticationPrincipal UserDetails user,
             @PathVariable Long id,
-            @RequestBody Map<String, String> body) {
-        String scheduledAt = body.get("scheduledAt");
-        if (scheduledAt == null || scheduledAt.isBlank()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "scheduledAt is required"));
-        }
-        LocalDateTime parsedAt = LocalDateTime.parse(scheduledAt);
-        if (!parsedAt.isAfter(LocalDateTime.now())) {
-            return ResponseEntity.badRequest().body(Map.of("error", "scheduledAt must be in the future"));
-        }
-        emailService.scheduleFollowUp(id, user.getUsername(), parsedAt);
-        return ResponseEntity.ok(Map.of("message", "Follow-up scheduled for " + scheduledAt));
+            @Valid @RequestBody ScheduleFollowUpRequest body) {
+        emailService.scheduleFollowUp(id, user.getUsername(), body.getScheduledAt());
+        return ResponseEntity.ok(Map.of("message", "Follow-up scheduled for " + body.getScheduledAt()));
     }
 }

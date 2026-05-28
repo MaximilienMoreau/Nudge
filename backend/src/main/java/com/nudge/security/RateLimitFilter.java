@@ -3,6 +3,7 @@ package com.nudge.security;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.nudge.util.IpUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -141,9 +142,7 @@ public class RateLimitFilter implements Filter {
     private boolean isTrustedProxy(String ip) {
         if (ip == null) return false;
         for (String trusted : trustedProxies) {
-            if (ip.equals(trusted) || ip.startsWith(trusted.replaceAll("/.*", ""))) {
-                return true;
-            }
+            if (IpUtils.matches(ip, trusted)) return true;
         }
         return false;
     }
