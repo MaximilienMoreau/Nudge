@@ -13,8 +13,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.nudge.util.IpUtils;
+
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -22,11 +23,18 @@ import java.util.Set;
  * Records them in the database and fires a real-time WebSocket notification
  * to the email's owner.
  *
- * Q6: The entire recordOpen method is @Transactional so the event save and
- *     the score computation happen in a single DB transaction.
+ * Q6:  The entire recordOpen method is @Transactional so the event save and
+ *      the score computation happen in a single DB transaction.
  *
- * S4: X-Forwarded-For is only trusted when the request originates from a
- *     configured trusted proxy range; otherwise the raw remote address is used.
+ * P4:  Hot-path optimisation — instead of loading ALL events to compute the
+ *      score, we run two COUNT queries and one findFirst query:
+ *        countByEmailAndType(OPEN)   → openCount
+ *        countByEmailAndType(CLICK)  → clickCount
+ *        findFirstByEmail…Desc(OPEN) → lastOpenAt
+ *      This keeps response time O(1) regardless of how many events exist.
+ *
+ * S4:  X-Forwarded-For is only trusted when the request originates from a
+ *      configured trusted proxy range; otherwise the raw remote address is used.
  */
 @Service
 public class TrackingService {
@@ -54,6 +62,9 @@ public class TrackingService {
     /**
      * Record an OPEN event triggered by a tracking pixel load.
      *
+     * P4: Score is computed from 2 COUNT queries instead of loading all events.
+     *     lastOpenAt = now (we just recorded the open, no extra query needed).
+     *
      * @param trackingId UUID embedded in the pixel URL
      * @param request    HTTP request for IP/User-Agent extraction
      * @return true if the email was found and event recorded, false otherwise
@@ -61,24 +72,26 @@ public class TrackingService {
     @Transactional          // Q6: single transaction for save + score recompute
     public boolean recordOpen(String trackingId, HttpServletRequest request) {
         return emailRepo.findByTrackingId(trackingId).map(email -> {
+            LocalDateTime now = LocalDateTime.now();
+
             TrackingEvent event = new TrackingEvent();
             event.setEmail(email);
             event.setType(EventType.OPEN);
-            event.setTimestamp(LocalDateTime.now());
+            event.setTimestamp(now);
             event.setIpAddress(extractIp(request));
             event.setUserAgent(request.getHeader("User-Agent"));
             eventRepo.save(event);
 
-            List<TrackingEvent> allEvents = eventRepo.findByEmailOrderByTimestampDesc(email);
-            int score = leadScoringService.computeScore(allEvents);
-            int openCount = (int) allEvents.stream()
-                    .filter(e -> e.getType() == EventType.OPEN)
-                    .count();
+            // P4: two COUNT queries — O(1) regardless of event history
+            long openCount  = eventRepo.countByEmailAndType(email, EventType.OPEN);
+            long clickCount = eventRepo.countByEmailAndType(email, EventType.CLICK);
+            // lastOpen is 'now' — we just persisted the open event above
+            int score = leadScoringService.computeScore(openCount, clickCount, now);
 
             log.info("Email opened: '{}' by {} (total opens: {}, score: {})",
                     email.getSubject(), email.getRecipientEmail(), openCount, score);
 
-            fireNotification(email, openCount, score);
+            fireNotification(email, EventType.OPEN, openCount, score);
             return true;
         }).orElse(false);
     }
@@ -86,9 +99,11 @@ public class TrackingService {
     /**
      * Record a CLICK event triggered by a tracked link redirect.
      *
+     * P4: Score computed from COUNT + findFirst — avoids loading all events.
+     *
      * @param trackingId UUID identifying the email
      * @param request    HTTP request for IP/User-Agent
-     * @return the original redirect URL, or null if email not found
+     * @return non-null sentinel when the email was found, null otherwise
      */
     @Transactional
     public String recordClick(String trackingId, HttpServletRequest request) {
@@ -101,26 +116,31 @@ public class TrackingService {
             event.setUserAgent(request.getHeader("User-Agent"));
             eventRepo.save(event);
 
-            List<TrackingEvent> allEvents = eventRepo.findByEmailOrderByTimestampDesc(email);
-            int score = leadScoringService.computeScore(allEvents);
+            // P4: COUNT + single-row findFirst — O(1)
+            long openCount  = eventRepo.countByEmailAndType(email, EventType.OPEN);
+            long clickCount = eventRepo.countByEmailAndType(email, EventType.CLICK);
+            LocalDateTime lastOpen = eventRepo
+                    .findFirstByEmailAndTypeOrderByTimestampDesc(email, EventType.OPEN)
+                    .map(TrackingEvent::getTimestamp)
+                    .orElse(null);
+            int score = leadScoringService.computeScore(openCount, clickCount, lastOpen);
 
             log.info("Link clicked in email '{}' by {}", email.getSubject(), email.getRecipientEmail());
 
-            fireNotification(email,
-                    (int) allEvents.stream().filter(e -> e.getType() == EventType.OPEN).count(),
-                    score);
+            fireNotification(email, EventType.CLICK, openCount, score);
             return "clicked"; // caller uses the ?url= param for the actual redirect
         }).orElse(null);
     }
 
-    private void fireNotification(TrackedEmail email, int openCount, int score) {
+    private void fireNotification(TrackedEmail email, EventType eventType, long openCount, int score) {
         String ownerEmail = email.getUser().getEmail();
+        String notifType  = eventType == EventType.CLICK ? "EMAIL_CLICKED" : "EMAIL_OPENED";
         NotificationDTO notification = new NotificationDTO(
-                "EMAIL_OPENED",
+                notifType,
                 email.getId(),
                 email.getSubject(),
                 email.getRecipientEmail(),
-                openCount,
+                (int) openCount,
                 score,
                 LocalDateTime.now()
         );
@@ -144,11 +164,8 @@ public class TrackingService {
 
     private boolean isTrustedProxy(String ip) {
         if (ip == null) return false;
-        // Exact match or CIDR prefix match (simple implementation)
         for (String trusted : trustedProxies) {
-            if (ip.equals(trusted) || ip.startsWith(trusted.replaceAll("/.*", ""))) {
-                return true;
-            }
+            if (IpUtils.matches(ip, trusted)) return true;
         }
         return false;
     }

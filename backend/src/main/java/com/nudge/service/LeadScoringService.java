@@ -15,6 +15,7 @@ import java.util.List;
  *  - Opens volume   : up to 40 pts (15 per open, capped)
  *  - Recency        : up to 40 pts (how recently was the last open?)
  *  - Frequency bonus: up to 20 pts (multiple opens = high interest)
+ *  - Click bonus    : up to 20 pts (link clicks = stronger intent signal)
  *
  * Q1/Q8: EventType is compared by identity (==) everywhere — no .name().equals().
  * P3:    computeScore passes over the event list once to collect all metrics.
@@ -24,32 +25,53 @@ public class LeadScoringService {
 
     /**
      * Compute the lead score from a list of tracking events.
-     * P3: Single-pass accumulation — one loop collects openCount and lastOpen.
+     * P3: Single-pass accumulation — one loop collects openCount, clickCount,
+     *     and lastOpen. Delegates to the scalar overload to keep logic in one place.
      *
      * @param events all events for the email (may be empty)
      * @return score in [0, 100]
      */
     public int computeScore(List<TrackingEvent> events) {
-        long openCount = 0;
+        long openCount  = 0;
+        long clickCount = 0;
         LocalDateTime lastOpen = null;
 
-        // P3: one pass over the list collects both metrics
+        // P3: one pass collects all metrics
         for (TrackingEvent e : events) {
-            if (e.getType() == EventType.OPEN) {   // Q1/Q8: enum identity comparison
+            if (e.getType() == EventType.OPEN) {      // Q1/Q8: enum identity comparison
                 openCount++;
                 if (lastOpen == null || e.getTimestamp().isAfter(lastOpen)) {
                     lastOpen = e.getTimestamp();
                 }
+            } else if (e.getType() == EventType.CLICK) {
+                clickCount++;
             }
         }
 
-        if (openCount == 0) return 0;
+        return computeScore(openCount, clickCount, lastOpen);
+    }
 
-        int volumeScore    = volumeScore(openCount);
-        int recencyScore   = recencyScore(lastOpen);
-        int frequencyBonus = frequencyBonus(openCount);
+    /**
+     * Hot-path variant used by TrackingService to avoid loading all events from DB.
+     * Called with pre-aggregated counts so only COUNT + findFirst queries are needed.
+     *
+     * @param openCount  total OPEN events for the email
+     * @param clickCount total CLICK events for the email
+     * @param lastOpen   timestamp of the most recent OPEN, or null if none
+     * @return score in [0, 100]
+     */
+    public int computeScore(long openCount, long clickCount, LocalDateTime lastOpen) {
+        if (openCount == 0 && clickCount == 0) return 0;
 
-        return Math.min(volumeScore + recencyScore + frequencyBonus, 100);
+        // Opens with no opens yet — only click bonus applies
+        if (openCount == 0) return Math.min(clickBonus(clickCount), 100);
+
+        return Math.min(
+                volumeScore(openCount)
+                + recencyScore(lastOpen)
+                + frequencyBonus(openCount)
+                + clickBonus(clickCount),
+                100);
     }
 
     /** More opens = higher score, capped at 40. */
@@ -85,6 +107,17 @@ public class LeadScoringService {
         if (opens > 5) return 20;
         if (opens > 3) return 15;
         if (opens > 1) return 10;
+        return 0;
+    }
+
+    /**
+     * Click bonus — each click signals stronger intent than a passive open:
+     *  ≥ 2 clicks → 20 pts
+     *  ≥ 1 click  → 10 pts
+     */
+    private int clickBonus(long clicks) {
+        if (clicks >= 2) return 20;
+        if (clicks >= 1) return 10;
         return 0;
     }
 }
