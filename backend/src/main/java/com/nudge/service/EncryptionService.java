@@ -90,7 +90,7 @@ public class EncryptionService {
             return new String(cipher.doFinal(ciphertext));
         } catch (Exception e) {
             log.error("Decryption failed for value (data may be corrupted or key mismatch): {}", e.getMessage());
-            return "";
+            return null;
         }
     }
 }

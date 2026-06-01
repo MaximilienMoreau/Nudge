@@ -76,7 +76,12 @@ public class RateLimitFilter implements Filter {
         } else if ("GET".equals(method) && path.startsWith("/track/open/")) {
             // Key on the tracking ID itself — not the caller IP — to prevent open-count inflation
             String trackingId = path.substring("/track/open/".length());
-            key   = "track:" + trackingId;
+            key   = "track-open:" + trackingId;
+            limit = TRACK_LIMIT;
+        } else if ("GET".equals(method) && path.startsWith("/track/click/")) {
+            // Same inflation guard for click events
+            String trackingId = path.substring("/track/click/".length());
+            key   = "track-click:" + trackingId;
             limit = TRACK_LIMIT;
         } else {
             chain.doFilter(req, res);

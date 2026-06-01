@@ -58,7 +58,7 @@ public class AuthService {
 
         log.info("New user registered: {}", user.getEmail());
         String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getTokenVersion());
-        return new AuthResponse(token, user.getEmail(), user.getId());
+        return new AuthResponse(token, user.getEmail(), user.getId(), user.getCreatedAt());
     }
 
     /** Authenticate a user and return a JWT. Throws on bad credentials. */
@@ -72,7 +72,7 @@ public class AuthService {
 
         String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getTokenVersion());
         log.info("User logged in: {}", user.getEmail());
-        return new AuthResponse(token, user.getEmail(), user.getId());
+        return new AuthResponse(token, user.getEmail(), user.getId(), user.getCreatedAt());
     }
 
     /**
@@ -95,7 +95,7 @@ public class AuthService {
 
         log.info("Password changed for user: {}", userEmail);
         String newToken = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getTokenVersion());
-        return new AuthResponse(newToken, user.getEmail(), user.getId());
+        return new AuthResponse(newToken, user.getEmail(), user.getId(), user.getCreatedAt());
     }
 
     /**
