@@ -38,8 +38,9 @@ async function handleLogin(e) {
     if (!res.ok) { showError(errEl, data.error || 'Login failed'); return; }
 
     // Token is in an httpOnly cookie — only store non-sensitive info
-    localStorage.setItem('nudge_email',  data.email);
-    localStorage.setItem('nudge_userId', data.userId);
+    localStorage.setItem('nudge_email',     data.email);
+    localStorage.setItem('nudge_userId',    data.userId);
+    if (data.createdAt) localStorage.setItem('nudge_createdAt', data.createdAt);
     window.location.href = 'dashboard.html';
 
   } catch {
@@ -81,8 +82,9 @@ async function handleRegister(e) {
     if (!res.ok) { showError(errEl, data.error || 'Registration failed'); return; }
 
     // Token is in an httpOnly cookie — only store non-sensitive info
-    localStorage.setItem('nudge_email',  data.email);
-    localStorage.setItem('nudge_userId', data.userId);
+    localStorage.setItem('nudge_email',     data.email);
+    localStorage.setItem('nudge_userId',    data.userId);
+    if (data.createdAt) localStorage.setItem('nudge_createdAt', data.createdAt);
     window.location.href = 'dashboard.html';
 
   } catch {

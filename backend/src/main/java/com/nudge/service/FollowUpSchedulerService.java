@@ -4,12 +4,13 @@ import com.nudge.model.TrackedEmail;
 import com.nudge.repository.TrackedEmailRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Slice;
 import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
-import java.util.List;
 
 /**
  * F4: Scans for emails with a past scheduledFollowUpAt and notifies the owner.
@@ -37,37 +38,45 @@ public class FollowUpSchedulerService {
         this.emailNotificationService = emailNotificationService;
     }
 
+    private static final int BATCH_SIZE = 100;
+
     /** Fixed-delay scan; interval configured in application.properties. */
     @Scheduled(fixedDelayString = "${nudge.followup.scheduler.interval-ms:3600000}")
     public void checkDueFollowUps() {
-        List<TrackedEmail> due = emailRepo.findByScheduledFollowUpAtIsNotNullAndArchivedAtIsNull();
         LocalDateTime now = LocalDateTime.now();
+        int page = 0;
+        Slice<TrackedEmail> slice;
 
-        for (TrackedEmail email : due) {
-            if (email.getScheduledFollowUpAt() == null || email.getScheduledFollowUpAt().isAfter(now)) {
-                continue; // Not due yet
+        do {
+            slice = emailRepo.findByScheduledFollowUpAtIsNotNullAndArchivedAtIsNull(
+                    PageRequest.of(page++, BATCH_SIZE));
+
+            for (TrackedEmail email : slice.getContent()) {
+                if (email.getScheduledFollowUpAt() == null || email.getScheduledFollowUpAt().isAfter(now)) {
+                    continue; // Not due yet
+                }
+
+                String ownerEmail = email.getUser().getEmail();
+                log.info("Follow-up reminder due for email '{}' (owner: {})", email.getSubject(), ownerEmail);
+
+                // Push real-time WebSocket notification
+                com.nudge.dto.NotificationDTO notification = new com.nudge.dto.NotificationDTO(
+                        "FOLLOW_UP_REMINDER",
+                        email.getId(),
+                        email.getSubject(),
+                        email.getRecipientEmail(),
+                        0, 0,
+                        now
+                );
+                notificationService.notifyUser(ownerEmail, notification);
+
+                // F5: Also send an email notification as fallback
+                emailNotificationService.sendFollowUpReminder(ownerEmail, email.getSubject(), email.getRecipientEmail());
+
+                // Clear the reminder so it fires only once
+                email.setScheduledFollowUpAt(null);
+                emailRepo.save(email);
             }
-
-            String ownerEmail = email.getUser().getEmail();
-            log.info("Follow-up reminder due for email '{}' (owner: {})", email.getSubject(), ownerEmail);
-
-            // Push real-time WebSocket notification
-            com.nudge.dto.NotificationDTO notification = new com.nudge.dto.NotificationDTO(
-                    "FOLLOW_UP_REMINDER",
-                    email.getId(),
-                    email.getSubject(),
-                    email.getRecipientEmail(),
-                    0, 0,
-                    now
-            );
-            notificationService.notifyUser(ownerEmail, notification);
-
-            // F5: Also send an email notification as fallback
-            emailNotificationService.sendFollowUpReminder(ownerEmail, email.getSubject(), email.getRecipientEmail());
-
-            // Clear the reminder so it fires only once
-            email.setScheduledFollowUpAt(null);
-            emailRepo.save(email);
-        }
+        } while (slice.hasNext());
     }
 }

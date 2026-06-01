@@ -15,10 +15,10 @@
 // ── Platform detection ─────────────────────────────────────────
 
 const PLATFORM = (() => {
-  const h = window.location.hostname;
-  if (h === 'mail.google.com')           return 'gmail';
-  if (h.endsWith('outlook.live.com'))    return 'outlook';
-  if (h.endsWith('outlook.office.com'))  return 'outlook';
+  const h = window.location.hostname.toLowerCase();
+  if (h === 'mail.google.com')             return 'gmail';
+  if (h.endsWith('outlook.live.com'))      return 'outlook';
+  if (h.endsWith('outlook.office.com'))    return 'outlook';
   if (h.endsWith('outlook.office365.com')) return 'outlook';
   return null;
 })();
