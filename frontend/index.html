@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Nudge — Sign In</title>
+  <script>if(localStorage.getItem('nudge_theme')==='light')document.documentElement.setAttribute('data-theme','light');</script>
   <link rel="stylesheet" href="css/style.css"/>
   <!-- U9: Password strength indicator styles -->
   <style>
@@ -21,10 +22,13 @@
   <div class="auth-card">
     <div class="auth-logo">
       <div class="logo-icon">📨</div>
-      <div>
+      <div style="flex:1">
         <h1>Nudge</h1>
         <p>AI-powered email intelligence</p>
       </div>
+      <button id="theme-toggle-btn" onclick="toggleTheme()"
+              style="background:none;border:none;cursor:pointer;font-size:1.1rem;line-height:1;padding:4px"
+              title="Toggle light/dark mode">☀️</button>
     </div>
 
     <div class="tab-nav">
