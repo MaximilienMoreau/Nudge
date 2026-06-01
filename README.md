@@ -12,7 +12,7 @@ Nudge helps you track email opens in real-time, score engagement, and generate A
 nudge/
 ├── backend/          Spring Boot 3 (Java 17) — REST API + WebSocket
 ├── frontend/         Vanilla HTML/CSS/JS — Dashboard UI
-├── extension/        Chrome Extension (Manifest V3) — Gmail integration
+├── extension/        Chrome Extension (Manifest V3) — Gmail, Outlook, Proton Mail, Infomaniak, Yahoo
 └── database/         PostgreSQL schema / init scripts
 ```
 
@@ -115,10 +115,12 @@ Open `http://localhost:3000` (or the file directly).
 ```json
 {
   "subject": "Follow up on our meeting",
-  "recipientEmail": "john@company.com",
+  "recipientEmails": ["john@company.com", "jane@company.com"],
   "content": "Hi John, just wanted to follow up..."
 }
 ```
+
+> `recipientEmails` (array) is preferred. `recipientEmail` (single string) is also accepted for backwards compatibility — when both are present, `recipientEmails` takes precedence.
 
 **Response includes:**
 ```json
@@ -200,7 +202,7 @@ Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 ## Chrome Extension Usage
 
 1. Sign in via the popup using your Nudge account credentials
-2. Open Gmail and compose a new email
+2. Open Gmail, Outlook, Proton Mail, Infomaniak, or Yahoo Mail and compose a new email
 3. A **"📨 Nudge: ON"** button appears next to the Send button
 4. Click Send — Nudge automatically registers the email and injects the tracking pixel
 5. When the recipient opens the email, you get an instant notification on your dashboard
