@@ -4,6 +4,7 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Nudge — Dashboard</title>
+  <script>if(localStorage.getItem('nudge_theme')==='light')document.documentElement.setAttribute('data-theme','light');</script>
   <link rel="stylesheet" href="css/style.css"/>
   <!-- U4: Score tooltip style -->
   <style>
@@ -20,26 +21,28 @@
 
 <div id="toast-container"></div>
 
+<div class="sidebar-overlay" id="sidebar-overlay" onclick="closeSidebar()"></div>
+
 <div class="layout">
 
   <!-- ── Sidebar ──────────────────────────────────────────── -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
       <div class="logo-icon">📨</div>
       <span>Nudge</span>
     </div>
 
     <nav class="sidebar-nav">
-      <div class="nav-item active" onclick="showView('emails')">
+      <div class="nav-item active" onclick="showView('emails');closeSidebar()">
         <span>📊</span> Dashboard
       </div>
-      <div class="nav-item" onclick="showView('track')">
+      <div class="nav-item" onclick="showView('track');closeSidebar()">
         <span>➕</span> Track Email
       </div>
-      <div class="nav-item" onclick="showView('insights')">
+      <div class="nav-item" onclick="showView('insights');closeSidebar()">
         <span>🧠</span> AI Insights
       </div>
-      <div class="nav-item" onclick="showView('archived')">
+      <div class="nav-item" onclick="showView('archived');closeSidebar()">
         <span>🗂</span> Archived
       </div>
     </nav>
@@ -64,7 +67,8 @@
 
     <!-- Topbar -->
     <header class="topbar">
-      <div>
+      <div style="display:flex;align-items:center;gap:.6rem">
+        <button class="nav-toggle" onclick="openSidebar()" title="Menu">☰</button>
         <div class="topbar-title" id="view-title">Email Dashboard</div>
       </div>
       <div class="topbar-actions">
@@ -72,6 +76,7 @@
           <span class="ws-dot" id="ws-dot"></span>
           <span id="ws-label">Connecting…</span>
         </div>
+        <button class="btn btn-ghost btn-sm" id="theme-toggle-btn" onclick="toggleTheme()" title="Toggle light/dark mode">☀️</button>
         <button class="btn btn-primary btn-sm" onclick="openNewEmailModal()">
           + Track Email
         </button>
@@ -149,7 +154,7 @@
 
     <!-- ── Track Email view ─────────────────────────────────── -->
     <div class="content" id="view-track" style="display:none">
-      <div class="card" style="max-width:580px">
+      <div class="card">
         <div class="card-header">
           <span class="card-title">Track a New Email</span>
         </div>
@@ -159,17 +164,19 @@
             your email body as an invisible image.
           </p>
           <form id="track-form" onsubmit="handleTrackEmail(event)">
-            <div class="form-group">
-              <label>Subject</label>
-              <input type="text" id="t-subject" placeholder="Your email subject" required/>
+            <div class="grid-2">
+              <div class="form-group" style="margin-bottom:0">
+                <label>Subject</label>
+                <input type="text" id="t-subject" placeholder="Your email subject" required/>
+              </div>
+              <div class="form-group" style="margin-bottom:0">
+                <label>Recipient Email</label>
+                <input type="email" id="t-recipient" placeholder="recipient@company.com" required/>
+              </div>
             </div>
-            <div class="form-group">
-              <label>Recipient Email</label>
-              <input type="email" id="t-recipient" placeholder="recipient@company.com" required/>
-            </div>
-            <div class="form-group">
+            <div class="form-group" style="margin-top:1rem">
               <label>Email Body (optional — used for AI follow-ups)</label>
-              <textarea id="t-content" placeholder="Paste your email content here…"></textarea>
+              <textarea id="t-content" placeholder="Paste your email content here…" style="min-height:180px"></textarea>
             </div>
             <button type="submit" class="btn btn-primary" id="track-btn">
               Generate Tracking Pixel
@@ -178,19 +185,25 @@
 
           <!-- U1: Result section with Copy buttons -->
           <div id="track-result" style="display:none;margin-top:1.5rem">
-            <div style="color:var(--success);font-weight:600;margin-bottom:.5rem">
+            <div style="color:var(--success);font-weight:600;margin-bottom:.75rem">
               ✅ Email registered for tracking!
             </div>
-            <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">
-              Tracking Pixel URL:
-              <button class="btn btn-ghost copy-btn" id="pixel-url-copy">📋 Copy URL</button>
+            <div class="grid-2">
+              <div>
+                <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">
+                  Tracking Pixel URL:
+                  <button class="btn btn-ghost copy-btn" id="pixel-url-copy">📋 Copy URL</button>
+                </div>
+                <div class="pixel-url-box" id="pixel-url"></div>
+              </div>
+              <div>
+                <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">
+                  HTML to paste in email body:
+                  <button class="btn btn-ghost copy-btn" id="pixel-html-copy">📋 Copy HTML</button>
+                </div>
+                <div class="pixel-url-box" id="pixel-html"></div>
+              </div>
             </div>
-            <div class="pixel-url-box" id="pixel-url"></div>
-            <div style="margin-top:.75rem;color:var(--muted);font-size:.8rem">
-              HTML to paste in email body:
-              <button class="btn btn-ghost copy-btn" id="pixel-html-copy">📋 Copy HTML</button>
-            </div>
-            <div class="pixel-url-box" id="pixel-html"></div>
           </div>
         </div>
       </div>
@@ -198,7 +211,9 @@
 
     <!-- ── AI Insights view ───────────────────────────────────── -->
     <div class="content" id="view-insights" style="display:none">
-      <div class="card" style="max-width:520px;margin-bottom:1.5rem">
+      <div class="grid-2-lg">
+
+      <div class="card" style="margin-bottom:0">
         <div class="card-header">
           <span class="card-title">⏰ Best Send Time</span>
           <button class="btn btn-ghost btn-sm" onclick="loadSendTime()">↻ Refresh</button>
@@ -208,7 +223,7 @@
         </div>
       </div>
 
-      <div class="card" style="max-width:520px">
+      <div class="card" style="margin-bottom:0">
         <div class="card-header">
           <span class="card-title">🌐 Platform Support</span>
         </div>
@@ -233,8 +248,18 @@
                 <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel + Link</span></td>
               </tr>
               <tr>
-                <td style="padding:.5rem">Other web clients</td>
-                <td style="padding:.5rem"><span class="badge badge-gray">Dashboard fallback</span></td>
+                <td style="padding:.5rem">Proton Mail</td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Sidebar</span></td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem">Infomaniak Mail</td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Sidebar</span></td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem">Yahoo Mail</td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Sidebar</span></td>
                 <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
               </tr>
               <tr>
@@ -246,6 +271,8 @@
           </table>
         </div>
       </div>
+
+      </div><!-- /grid -->
     </div>
 
     <!-- ── Archived view ──────────────────────────────────── -->
@@ -362,6 +389,17 @@
     </div>
   </div>
 </div>
+
+<script>
+  function openSidebar() {
+    document.getElementById('sidebar').classList.add('open');
+    document.getElementById('sidebar-overlay').classList.add('open');
+  }
+  function closeSidebar() {
+    document.getElementById('sidebar').classList.remove('open');
+    document.getElementById('sidebar-overlay').classList.remove('open');
+  }
+</script>
 
 <!-- P4: SockJS and STOMP loaded statically with defer — no sequential onload chaining -->
 <script src="js/config.js"></script>

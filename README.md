@@ -148,14 +148,11 @@ Open `http://localhost:3000` (or the file directly).
 ```json
 {
   "emailId": 42,
-  "subject": "Partnership Proposal",
-  "originalContent": "Hi...",
-  "recipientEmail": "ceo@bigcorp.com",
-  "engagementScore": 85,
-  "openCount": 4,
   "daysSinceSent": 3
 }
 ```
+
+> `engagementScore` and `openCount` are intentionally not accepted from the client — the server recomputes them from the database to prevent tampering.
 
 ### WebSocket
 

@@ -124,10 +124,14 @@ async function handleGetPlatformStatus() {
     const url  = new URL(tab.url || '');
     const host = url.hostname;
 
-    if (host === 'mail.google.com')           return { platform: 'Gmail',         supported: true };
-    if (host.endsWith('outlook.live.com'))    return { platform: 'Outlook',       supported: true };
-    if (host.endsWith('outlook.office.com'))  return { platform: 'Outlook',       supported: true };
-    if (host.endsWith('outlook.office365.com')) return { platform: 'Outlook 365', supported: true };
+    if (host === 'mail.google.com')             return { platform: 'Gmail',        supported: true };
+    if (host.endsWith('outlook.live.com'))      return { platform: 'Outlook',      supported: true };
+    if (host.endsWith('outlook.office.com'))    return { platform: 'Outlook',      supported: true };
+    if (host.endsWith('outlook.office365.com')) return { platform: 'Outlook 365',  supported: true };
+    if (host === 'mail.proton.me')              return { platform: 'Proton Mail',  supported: true };
+    if (host === 'mail.protonmail.com')         return { platform: 'Proton Mail',  supported: true };
+    if (host === 'mail.infomaniak.com')         return { platform: 'Infomaniak',   supported: true };
+    if (host === 'mail.yahoo.com')              return { platform: 'Yahoo Mail',   supported: true };
 
     // Any web email not in our injection list — offer dashboard fallback
     return { platform: host || 'Unknown', supported: false };
