@@ -13,9 +13,15 @@ import java.util.List;
  *
  * Scoring breakdown (max 100):
  *  - Opens volume   : up to 40 pts (15 per open, capped)
- *  - Recency        : up to 40 pts (how recently was the last open?)
+ *  - Recency        : up to 40 pts — continuous exponential decay with a
+ *                     6-hour half-life (score = 40 × e^(−λ × hoursAgo),
+ *                     λ = ln 2 / 6). Avoids the abrupt step-function jumps
+ *                     of a bucket-based approach.
  *  - Frequency bonus: up to 20 pts (multiple opens = high interest)
  *  - Click bonus    : up to 20 pts (link clicks = stronger intent signal)
+ *
+ *  Bot events (suspectedBot = true) are excluded before any computation
+ *  so that Apple MPP / mail-scanner pre-fetches don't inflate scores.
  *
  * Q1/Q8: EventType is compared by identity (==) everywhere — no .name().equals().
  * P3:    computeScore passes over the event list once to collect all metrics.
@@ -23,10 +29,16 @@ import java.util.List;
 @Service
 public class LeadScoringService {
 
+    /** Half-life of the recency signal in hours. Score halves every 6 h. */
+    private static final double HALF_LIFE_HOURS = 6.0;
+    private static final double LAMBDA = Math.log(2) / HALF_LIFE_HOURS;
+
     /**
      * Compute the lead score from a list of tracking events.
-     * P3: Single-pass accumulation — one loop collects openCount, clickCount,
-     *     and lastOpen. Delegates to the scalar overload to keep logic in one place.
+     *
+     * BD:  Suspected-bot events are skipped before aggregation.
+     * P3:  Single-pass accumulation — one loop collects openCount, clickCount,
+     *      and lastOpen; delegates to the scalar overload for the formula.
      *
      * @param events all events for the email (may be empty)
      * @return score in [0, 100]
@@ -36,9 +48,9 @@ public class LeadScoringService {
         long clickCount = 0;
         LocalDateTime lastOpen = null;
 
-        // P3: one pass collects all metrics
         for (TrackingEvent e : events) {
-            if (e.getType() == EventType.OPEN) {      // Q1/Q8: enum identity comparison
+            if (e.isSuspectedBot()) continue;              // BD: skip bot events
+            if (e.getType() == EventType.OPEN) {           // Q1/Q8: enum identity
                 openCount++;
                 if (lastOpen == null || e.getTimestamp().isAfter(lastOpen)) {
                     lastOpen = e.getTimestamp();
@@ -53,17 +65,17 @@ public class LeadScoringService {
 
     /**
      * Hot-path variant used by TrackingService to avoid loading all events from DB.
-     * Called with pre-aggregated counts so only COUNT + findFirst queries are needed.
+     * Called with pre-aggregated counts (genuine opens only) and the timestamp
+     * of the most recent genuine open.
      *
-     * @param openCount  total OPEN events for the email
-     * @param clickCount total CLICK events for the email
-     * @param lastOpen   timestamp of the most recent OPEN, or null if none
+     * @param openCount  genuine OPEN event count (suspected bots excluded)
+     * @param clickCount total CLICK event count (clicks are always genuine)
+     * @param lastOpen   timestamp of the most recent genuine OPEN, or null
      * @return score in [0, 100]
      */
     public int computeScore(long openCount, long clickCount, LocalDateTime lastOpen) {
         if (openCount == 0 && clickCount == 0) return 0;
 
-        // Opens with no opens yet — only click bonus applies
         if (openCount == 0) return Math.min(clickBonus(clickCount), 100);
 
         return Math.min(
@@ -80,21 +92,24 @@ public class LeadScoringService {
     }
 
     /**
-     * Reward recency:
-     *  < 1 hour  → 40 pts
-     *  < 1 day   → 30 pts
-     *  < 3 days  → 20 pts
-     *  < 7 days  → 10 pts
-     *  older     →  0 pts
+     * Continuous exponential decay: score = 40 × e^(−λ × hoursAgo)
+     * where λ = ln(2) / 6, giving a 6-hour half-life.
+     *
+     * Examples:
+     *   0 h  → 40 pts   (just opened)
+     *   6 h  → 20 pts   (half-life)
+     *  12 h  → 10 pts
+     *  24 h  →  2–3 pts
+     *  48 h+ →  0 pts
+     *
+     * This replaces the previous step-function (binary buckets) to avoid
+     * a score of 40 pts at 59 min dropping abruptly to 30 pts at 61 min.
      */
     private int recencyScore(LocalDateTime lastOpen) {
         if (lastOpen == null) return 0;
-        long hoursAgo = ChronoUnit.HOURS.between(lastOpen, LocalDateTime.now());
-        if (hoursAgo < 1)   return 40;
-        if (hoursAgo < 24)  return 30;
-        if (hoursAgo < 72)  return 20;
-        if (hoursAgo < 168) return 10;
-        return 0;
+        double hoursAgo = ChronoUnit.MINUTES.between(lastOpen, LocalDateTime.now()) / 60.0;
+        if (hoursAgo < 0) hoursAgo = 0; // clock skew guard
+        return (int) Math.round(40.0 * Math.exp(-LAMBDA * hoursAgo));
     }
 
     /**

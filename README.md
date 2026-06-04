@@ -171,7 +171,7 @@ Subscribe to: `/user/queue/notifications`
   "recipientEmail": "ceo@bigcorp.com",
   "openCount": 2,
   "leadScore": 65,
-  "timestamp": "2025-01-15T10:30:00"
+  "timestamp": "2027-01-15T10:30:00"
 }
 ```
 
@@ -179,18 +179,19 @@ Subscribe to: `/user/queue/notifications`
 
 ## Lead Scoring
 
-The Reply Probability Score (0–100) is computed from:
+The Reply Probability Score (0–100) is computed from genuine opens only — bot/proxy pre-fetches (Apple MPP, Google Image Proxy, MS Exchange Safe Links, etc.) are detected and excluded automatically.
 
-| Signal           | Points       |
-|------------------|--------------|
-| Opens volume     | 15 per open, max 40 |
-| Recency (< 1h)   | 40           |
-| Recency (< 1d)   | 30           |
-| Recency (< 3d)   | 20           |
-| Recency (< 7d)   | 10           |
-| Frequency (> 5x) | 20           |
-| Frequency (> 3x) | 15           |
-| Frequency (> 1x) | 10           |
+| Signal              | Points                                      |
+|---------------------|---------------------------------------------|
+| Opens volume        | 15 per open, max 40                         |
+| Recency             | Continuous exponential decay: `40 × e^(−λt)`, half-life = 6 h |
+| Frequency (> 5×)    | 20                                          |
+| Frequency (> 3×)    | 15                                          |
+| Frequency (> 1×)    | 10                                          |
+| Click (1 click)     | 10                                          |
+| Click (≥ 2 clicks)  | 20                                          |
+
+Recency examples: just opened → 40 pts · 6 h ago → 20 pts · 12 h ago → 10 pts · 48 h+ → 0 pts.
 
 Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 

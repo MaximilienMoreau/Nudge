@@ -46,4 +46,12 @@ public class TrackingEvent {
 
     /** Recipient's email client User-Agent string */
     private String userAgent;
+
+    /**
+     * True when this event was classified as a bot/proxy pre-fetch by
+     * BotDetectionService. Suspected-bot events are persisted for audit
+     * purposes but excluded from lead-score computation and notifications.
+     */
+    @Column(nullable = false)
+    private boolean suspectedBot = false;
 }
