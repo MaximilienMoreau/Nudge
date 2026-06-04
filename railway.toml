@@ -1,0 +1,13 @@
+# railway.toml — Railway deployment config for the Nudge backend.
+# Railway will detect this file automatically when the repo is connected.
+
+[build]
+builder            = "DOCKERFILE"
+dockerfilePath     = "backend/Dockerfile"
+buildContext       = "backend"
+
+[deploy]
+healthcheckPath    = "/actuator/health"
+healthcheckTimeout = 30
+restartPolicyType  = "ON_FAILURE"
+restartPolicyMaxRetries = 3
