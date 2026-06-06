@@ -1,5 +1,5 @@
 /**
- * background.js — Nudge Chrome Extension Service Worker (Manifest V3)
+ * background.js — Nudge Browser Extension Service Worker (Manifest V3 — Chrome & Edge)
  *
  * Responsibilities:
  *  - Register a new email with the Nudge backend (REGISTER_EMAIL)

@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Nudge — Email Tracker",
   "version": "1.2.0",
-  "description": "Track emails across Gmail, Outlook, Proton Mail, Infomaniak, and Yahoo Mail. Know when recipients open your emails.",
+  "description": "Get alerted the moment someone opens your email — no reply needed. Works on Gmail, Outlook, Proton Mail, Infomaniak, and Yahoo Mail. Compatible with Chrome and Edge.",
 
   "permissions": [
     "storage",

@@ -1,8 +1,8 @@
-# Nudge — AI-Powered Email Tracker
+# Nudge — Email Open Tracker
 
-> "Never get ghosted again. Know exactly when and how to follow up."
+> Get alerted the moment someone opens your email — no reply needed.
 
-Nudge tracks email opens in real-time, scores engagement, and generates AI-powered follow-ups.
+Nudge is a **browser extension** (Chrome, Edge) and a **tracking pixel** that notifies you in real-time when a recipient opens an email you sent, without waiting for a reply. It also scores engagement and generates AI-powered follow-ups.
 
 ---
 
@@ -12,9 +12,13 @@ Nudge tracks email opens in real-time, scores engagement, and generates AI-power
 nudge/
 ├── backend/          Spring Boot 3 (Java 17) — REST API + WebSocket
 ├── frontend/         Vanilla HTML/CSS/JS — Dashboard UI
-├── extension/        Chrome Extension (Manifest V3) — Gmail, Outlook, Proton Mail, Infomaniak, Yahoo
+├── extension/        Browser Extension (Manifest V3, Chrome & Edge) — Gmail, Outlook, Proton Mail, Infomaniak, Yahoo
 └── database/         PostgreSQL schema / init scripts
 ```
+
+**Two ways to track an email:**
+- **Extension** (recommended): install on Chrome or Edge → compose → the pixel is injected automatically on Send
+- **Pixel manuel**: create a tracking via the dashboard → copy the pixel → paste it into any email client
 
 ---
 
@@ -25,7 +29,7 @@ nudge/
 | Java       | 17+           |
 | Maven      | 3.8+          |
 | PostgreSQL | 14+           |
-| Chrome     | Latest        |
+| Chrome or Edge | Latest    |
 | OpenAI Key | (optional)    |
 
 ---
@@ -77,12 +81,23 @@ npx serve .
 python3 -m http.server 3000
 ```
 
-### 4. Chrome Extension
+### 4. Browser Extension (Chrome or Edge)
 
-1. Open Chrome → `chrome://extensions/`
+The extension uses Manifest V3 and runs on any Chromium-based browser — no code changes needed between Chrome and Edge.
+
+**Chrome:**
+1. Go to `chrome://extensions/`
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked** → select the `/extension` folder
 4. The Nudge icon appears in your toolbar — click it to sign in
+
+**Edge:**
+1. Go to `edge://extensions/`
+2. Enable **Developer mode** (left sidebar)
+3. Click **Load unpacked** → select the `/extension` folder
+4. The Nudge icon appears in your toolbar — click it to sign in
+
+> To publish on the Edge Add-ons store, submit the same `/extension` folder without modification — Edge accepts Chrome Manifest V3 extensions natively.
 
 ---
 
@@ -254,13 +269,21 @@ Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 
 ---
 
-## Chrome Extension Usage
+## Extension Usage (Chrome & Edge)
 
-1. Sign in via the popup using your Nudge account credentials
+1. Sign in via the popup with your Nudge account credentials
 2. Open Gmail, Outlook, Proton Mail, Infomaniak, or Yahoo Mail and compose a new email
 3. A **"📨 Nudge: ON"** button appears next to the Send button
 4. Click Send — Nudge automatically registers the email and injects the tracking pixel
-5. When the recipient opens the email, you get an instant notification on your dashboard
+5. **The moment the recipient opens your email**, you get an instant notification — no reply needed
+
+### Without the extension (any email client)
+
+1. Go to the dashboard → **Track Email**
+2. Fill in the subject, recipient, and body
+3. Copy the generated pixel HTML: `<img src="..." width="1" height="1" style="display:none"/>`
+4. Paste it into your email before sending
+5. You'll still receive real-time open notifications on the dashboard
 
 ---
 
@@ -287,4 +310,4 @@ Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 | Real-time   | WebSocket + STOMP + SockJS          |
 | AI          | OpenAI `gpt-4o-mini` via REST       |
 | Frontend    | HTML5 + CSS3 + Vanilla JS           |
-| Extension   | Chrome Extension Manifest V3        |
+| Extension   | Browser Extension Manifest V3 (Chrome & Edge) |
