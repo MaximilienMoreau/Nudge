@@ -10,10 +10,10 @@ docker compose up -d
 
 ---
 
-## S10 — Chrome Extension: Production Configuration
+## Browser Extension: Production Configuration (Chrome & Edge)
 
 The extension's `background.js` and `popup.js` both use `API_BASE`.
-Before publishing to the Chrome Web Store you must update this value:
+Before publishing to the Chrome Web Store or Edge Add-ons store, update this value:
 
 1. Open [extension/background.js](extension/background.js) and change:
    ```js
@@ -26,13 +26,17 @@ Before publishing to the Chrome Web Store you must update this value:
    ```
 4. The extension communicates over **HTTPS only** in production — the JWT in the
    `Authorization` header is sent over TLS. Never ship `http://` in production.
-5. Add your extension's origin (`chrome-extension://<extension-id>`) to the
-   `CORS_ALLOWED_ORIGINS` environment variable on the backend so the browser
-   does not block cross-origin requests.
+5. Add your extension's origin to the `CORS_ALLOWED_ORIGINS` environment variable
+   on the backend so the browser does not block cross-origin requests:
+   - Chrome: `chrome-extension://<extension-id>`
+   - Edge: `extension://<extension-id>`
+
+> The same `/extension` folder can be submitted to both stores without modification —
+> Edge natively supports Chrome Manifest V3 extensions.
 
 ---
 
-## A4 — WebSocket Broker: Moving to Production
+## WebSocket Broker: Moving to Production
 
 The default setup uses Spring's **in-memory STOMP broker** (`enableSimpleBroker`).
 This works for a single server instance but has two limitations:
