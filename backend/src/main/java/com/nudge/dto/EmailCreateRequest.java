@@ -27,7 +27,7 @@ public class EmailCreateRequest {
     private String recipientEmail;
 
     /**
-     * F3: Multiple recipients — each gets its own unique trackingId.
+     * Multiple recipients — each gets its own unique trackingId.
      * When provided and non-empty, recipientEmail is ignored.
      */
     private List<@Email String> recipientEmails;

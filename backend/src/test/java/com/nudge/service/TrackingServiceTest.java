@@ -94,7 +94,7 @@ class TrackingServiceTest {
 
         service.recordOpen("test-uuid", new MockHttpServletRequest());
 
-        // P4: full event list must NEVER be loaded
+        // full event list must NEVER be loaded
         verify(eventRepo, never()).findByEmailOrderByTimestampDesc(any());
         verify(eventRepo, atLeastOnce()).countByEmailAndTypeAndSuspectedBotFalse(eq(email), any());
     }
@@ -214,7 +214,7 @@ class TrackingServiceTest {
         assertThat(captor.getValue().getType()).isEqualTo("EMAIL_CLICKED");
     }
 
-    // ── S4: IP extraction ─────────────────────────────────────────────────────
+    // ── IP extraction ─────────────────────────────────────────────────────
 
     @Test
     void recordOpen_S4_ignoresXFF_whenNotFromTrustedProxy() {

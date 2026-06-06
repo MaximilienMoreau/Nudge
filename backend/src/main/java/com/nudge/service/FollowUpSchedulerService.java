@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 import java.time.LocalDateTime;
 
 /**
- * F4: Scans for emails with a past scheduledFollowUpAt and notifies the owner.
+ * Scans for emails with a past scheduledFollowUpAt and notifies the owner.
  *
  * The check interval is configurable via nudge.followup.scheduler.interval-ms
  * (default: 1 hour in production, useful to lower in dev for testing).
@@ -70,7 +70,7 @@ public class FollowUpSchedulerService {
                 );
                 notificationService.notifyUser(ownerEmail, notification);
 
-                // F5: Also send an email notification as fallback
+                // Also send an email notification as fallback
                 emailNotificationService.sendFollowUpReminder(ownerEmail, email.getSubject(), email.getRecipientEmail());
 
                 // Clear the reminder so it fires only once

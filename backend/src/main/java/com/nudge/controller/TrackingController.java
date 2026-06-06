@@ -68,7 +68,7 @@ public class TrackingController {
     }
 
     /**
-     * F2: GET /track/click/{trackingId}?url=https://original.link
+     * GET /track/click/{trackingId}?url=https://original.link
      *
      * Records a CLICK event and 302-redirects to the original URL.
      * Embed links in emails as: /track/click/{trackingId}?url=<encoded original URL>
@@ -77,7 +77,7 @@ public class TrackingController {
     public ResponseEntity<Void> trackClick(@PathVariable String trackingId,
                                            @RequestParam(required = false) String url,
                                            HttpServletRequest request) {
-        boolean found = (trackingService.recordClick(trackingId, request) != null);
+        boolean found = trackingService.recordClick(trackingId, request);
         if (!found) {
             log.warn("Unknown tracking ID (click): {}", trackingId);
         }

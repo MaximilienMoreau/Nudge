@@ -6,7 +6,7 @@
   <title>Nudge — Dashboard</title>
   <script>if(localStorage.getItem('nudge_theme')==='light')document.documentElement.setAttribute('data-theme','light');</script>
   <link rel="stylesheet" href="css/style.css"/>
-  <!-- U4: Score tooltip style -->
+  <!-- Score tooltip style -->
   <style>
     .score-wrap   { display:flex;align-items:center;gap:.35rem;cursor:help }
     .score-help   { font-size:.65rem;color:var(--muted);border:1px solid currentColor;
@@ -52,7 +52,7 @@
         <div class="user-avatar" id="user-avatar">U</div>
         <div class="user-meta">
           <div class="name" id="user-email-display">—</div>
-          <!-- U5: Shows "Since <date>" or "Free Plan" — never hardcoded "Pro Plan" -->
+          <!-- Shows "Since <date>" or "Free Plan" — never hardcoded "Pro Plan" -->
           <div class="role" id="user-role">Free Plan</div>
         </div>
       </div>
@@ -110,7 +110,7 @@
       <div class="card">
         <div class="card-header">
           <span class="card-title">Tracked Emails</span>
-          <!-- U3: Search input -->
+          <!-- Search input -->
           <input type="search" id="email-search" placeholder="Search subject or recipient…"
                  oninput="handleSearch(this.value)"
                  style="padding:.35rem .6rem;border-radius:6px;border:1px solid var(--border);
@@ -121,12 +121,12 @@
           <table>
             <thead>
               <tr>
-                <!-- U3: data-sort attributes enable column sorting -->
+                <!-- data-sort attributes enable column sorting -->
                 <th data-sort="subject">Subject</th>
                 <th data-sort="recipientEmail">Recipient</th>
                 <th data-sort="createdAt">Sent</th>
                 <th data-sort="status">Status</th>
-                <!-- U4: "?" tooltip on score column header -->
+                <!-- "?" tooltip on score column header -->
                 <th data-sort="leadScore"
                     title="Reply Probability Score (0–100): open count + recency + frequency">
                   Score ℹ
@@ -183,7 +183,7 @@
             </button>
           </form>
 
-          <!-- U1: Result section with Copy buttons -->
+          <!-- Result section with Copy buttons -->
           <div id="track-result" style="display:none;margin-top:1.5rem">
             <div style="color:var(--success);font-weight:600;margin-bottom:.75rem">
               ✅ Email registered for tracking!
@@ -326,7 +326,7 @@
           <label>Email Body</label>
           <textarea id="m-content" placeholder="Paste your email content (used for AI follow-ups)…"></textarea>
         </div>
-        <!-- U1: Modal result with copy buttons -->
+        <!-- Modal result with copy buttons -->
         <div id="modal-result" style="display:none">
           <div style="color:var(--success);font-weight:600;margin-bottom:.5rem">✅ Tracking pixel created!</div>
           <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">
@@ -367,7 +367,7 @@
         Generate Follow-Up
       </button>
 
-      <!-- U8: Fallback warning banner -->
+      <!-- Fallback warning banner -->
       <div id="ai-fallback-warning" style="display:none;margin-top:.75rem;padding:.6rem .85rem;
            background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;
            font-size:.8rem;color:#b45309">
@@ -401,7 +401,7 @@
   }
 </script>
 
-<!-- P4: SockJS and STOMP loaded statically with defer — no sequential onload chaining -->
+<!-- SockJS and STOMP loaded statically with defer — no sequential onload chaining -->
 <script src="js/config.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js" defer></script>

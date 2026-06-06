@@ -19,11 +19,11 @@ import java.util.Map;
 /**
  * CRUD for tracked emails. All endpoints require a valid JWT.
  *
- * A3: GET /api/emails supports ?page= and ?size= pagination.
- * F1: DELETE /api/emails/{id} — soft-delete (sets archivedAt).
- * F3: POST /api/emails returns List<EmailDTO> (one per recipient).
- * F4: POST /api/emails/{id}/schedule — schedule a follow-up reminder.
- * F8: GET /api/emails/{id} is now used for the detail/drilldown view.
+ * GET /api/emails supports ?page= and ?size= pagination.
+ * DELETE /api/emails/{id} — soft-delete (sets archivedAt).
+ * POST /api/emails returns List<EmailDTO> (one per recipient).
+ * POST /api/emails/{id}/schedule — schedule a follow-up reminder.
+ * GET /api/emails/{id} is now used for the detail/drilldown view.
  */
 @RestController
 @RequestMapping("/api/emails")
@@ -37,7 +37,7 @@ public class EmailController {
 
     /**
      * GET /api/emails
-     * A3: paginated; defaults to page 0, up to 50 emails per page.
+     * paginated; defaults to page 0, up to 50 emails per page.
      */
     @GetMapping
     public ResponseEntity<Page<EmailDTO>> listEmails(
@@ -50,7 +50,7 @@ public class EmailController {
 
     /**
      * POST /api/emails
-     * F3: Returns a list — one EmailDTO per recipient.
+     * Returns a list — one EmailDTO per recipient.
      */
     @PostMapping
     public ResponseEntity<List<EmailDTO>> createEmail(
@@ -62,7 +62,7 @@ public class EmailController {
 
     /**
      * GET /api/emails/{id}
-     * F8: Detail view for a single tracked email (validates ownership).
+     * Detail view for a single tracked email (validates ownership).
      */
     @GetMapping("/{id}")
     public ResponseEntity<EmailDTO> getEmail(
@@ -73,7 +73,7 @@ public class EmailController {
 
     /**
      * DELETE /api/emails/{id}
-     * F1: Soft-delete — sets archivedAt; the email is hidden from the list.
+     * Soft-delete — sets archivedAt; the email is hidden from the list.
      */
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, String>> archiveEmail(
@@ -119,7 +119,7 @@ public class EmailController {
 
     /**
      * POST /api/emails/{id}/schedule
-     * F4: Schedule a follow-up reminder at the given ISO-8601 date-time.
+     * Schedule a follow-up reminder at the given ISO-8601 date-time.
      * Body: { "scheduledAt": "2026-04-20T09:00:00" }
      *
      * Validation (@NotNull, @Future) is handled by ScheduleFollowUpRequest,

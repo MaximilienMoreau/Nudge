@@ -23,8 +23,8 @@ import java.util.List;
  *  Bot events (suspectedBot = true) are excluded before any computation
  *  so that Apple MPP / mail-scanner pre-fetches don't inflate scores.
  *
- * Q1/Q8: EventType is compared by identity (==) everywhere — no .name().equals().
- * P3:    computeScore passes over the event list once to collect all metrics.
+ * EventType is compared by identity (==) everywhere — no .name().equals().
+ *    computeScore passes over the event list once to collect all metrics.
  */
 @Service
 public class LeadScoringService {
@@ -37,7 +37,7 @@ public class LeadScoringService {
      * Compute the lead score from a list of tracking events.
      *
      * BD:  Suspected-bot events are skipped before aggregation.
-     * P3:  Single-pass accumulation — one loop collects openCount, clickCount,
+     *  Single-pass accumulation — one loop collects openCount, clickCount,
      *      and lastOpen; delegates to the scalar overload for the formula.
      *
      * @param events all events for the email (may be empty)
@@ -50,7 +50,7 @@ public class LeadScoringService {
 
         for (TrackingEvent e : events) {
             if (e.isSuspectedBot()) continue;              // BD: skip bot events
-            if (e.getType() == EventType.OPEN) {           // Q1/Q8: enum identity
+            if (e.getType() == EventType.OPEN) {           // enum identity
                 openCount++;
                 if (lastOpen == null || e.getTimestamp().isAfter(lastOpen)) {
                     lastOpen = e.getTimestamp();
