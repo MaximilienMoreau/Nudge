@@ -4,6 +4,7 @@ import com.nudge.model.TrackedEmail;
 import com.nudge.model.User;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -25,9 +26,10 @@ public interface TrackedEmailRepository extends JpaRepository<TrackedEmail, Long
 
     /**
      * F4: Find emails where a follow-up was scheduled before now
-     * and has not yet been archived.
+     * and has not yet been archived. Pageable variant prevents loading
+     * unbounded results into memory in the scheduler.
      */
-    List<TrackedEmail> findByScheduledFollowUpAtIsNotNullAndArchivedAtIsNull();
+    Slice<TrackedEmail> findByScheduledFollowUpAtIsNotNullAndArchivedAtIsNull(Pageable pageable);
 
     /** Archived emails for a user, most recently archived first. */
     List<TrackedEmail> findByUserAndArchivedAtIsNotNullOrderByArchivedAtDesc(User user);

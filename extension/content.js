@@ -1,7 +1,7 @@
 /**
  * content.js — Nudge Multi-Platform Email Tracker
  *
- * Supported platforms: Gmail, Outlook Web (live / office / office365)
+ * Supported platforms: Gmail, Outlook Web, Proton Mail, Infomaniak Mail, Yahoo Mail
  *
  * Architecture: platform-adapter pattern
  *   - Each email client has its own adapter with DOM selectors.
@@ -15,11 +15,15 @@
 // ── Platform detection ─────────────────────────────────────────
 
 const PLATFORM = (() => {
-  const h = window.location.hostname;
-  if (h === 'mail.google.com')           return 'gmail';
-  if (h.endsWith('outlook.live.com'))    return 'outlook';
-  if (h.endsWith('outlook.office.com'))  return 'outlook';
+  const h = window.location.hostname.toLowerCase();
+  if (h === 'mail.google.com')             return 'gmail';
+  if (h.endsWith('outlook.live.com'))      return 'outlook';
+  if (h.endsWith('outlook.office.com'))    return 'outlook';
   if (h.endsWith('outlook.office365.com')) return 'outlook';
+  if (h === 'mail.proton.me')              return 'protonmail';
+  if (h === 'mail.protonmail.com')         return 'protonmail';
+  if (h === 'mail.infomaniak.com')         return 'infomaniak';
+  if (h === 'mail.yahoo.com')              return 'yahoo';
   return null;
 })();
 
@@ -141,6 +145,197 @@ const ADAPTERS = {
       // Insert into the command/toolbar bar at the bottom of the compose area
       return (
         c.querySelector('[class*="commandBar"], [class*="CommandBar"], [class*="toolbar"]') ?? c
+      );
+    }
+  },
+
+  // ── Proton Mail (mail.proton.me / mail.protonmail.com) ────────
+  // Note: Proton Mail recipients who have "block remote images" enabled
+  // will not trigger the pixel. External recipients are unaffected.
+  protonmail: {
+    findComposeWindows() {
+      const found = [];
+      document.querySelectorAll('button[data-testid="composer:send-button"]').forEach(sendBtn => {
+        const container = sendBtn.closest(
+          '[data-testid="composer-container"], [class*="composer"], [class*="Composer"]'
+        );
+        if (container) found.push({ container, sendBtn });
+      });
+      return found;
+    },
+    extractSubject(c) {
+      return c.querySelector('input[data-testid="composer:subject"]')?.value.trim() ?? '';
+    },
+    extractRecipients(c) {
+      const emails = new Set();
+      // Address chips expose the email in their title or a nested element
+      c.querySelectorAll(
+        '[data-testid="composer:to"] .composer-addresses-item, ' +
+        '[data-testid="composer:to"] [title]'
+      ).forEach(el => {
+        const txt = el.getAttribute('title') || el.textContent || '';
+        const m = txt.match(/[^\s@;<>]+@[^\s@;<>]+\.[^\s@;<>]+/);
+        if (m) emails.add(m[0]);
+      });
+      if (emails.size) return [...emails];
+      const input = c.querySelector('input[placeholder*="Email address"]');
+      if (input?.value) {
+        (input.value.match(/[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+/g) ?? []).forEach(e => emails.add(e));
+      }
+      return [...emails];
+    },
+    extractBody(c) {
+      // Proton Mail uses a same-origin iframe for the editor (Rooster)
+      const iframe = c.querySelector('iframe.rooster-editor-iframe, iframe[title*="Email"]');
+      if (iframe) {
+        try {
+          return iframe.contentDocument?.querySelector('[contenteditable="true"]')?.innerText.trim() ?? '';
+        } catch { /* cross-origin guard */ }
+      }
+      return c.querySelector('[contenteditable="true"]')?.innerText.trim() ?? '';
+    },
+    injectPixel(c, url) {
+      const iframe = c.querySelector('iframe.rooster-editor-iframe, iframe[title*="Email"]');
+      if (iframe) {
+        try {
+          const body = iframe.contentDocument?.querySelector('[contenteditable="true"]');
+          if (body) {
+            body.querySelector('.nudge-pixel')?.remove();
+            body.appendChild(buildPixelImg(url));
+            return;
+          }
+        } catch { /* cross-origin guard */ }
+      }
+      // Fallback: top-level contenteditable (may not embed in sent email)
+      const body = c.querySelector('[contenteditable="true"]');
+      if (body) {
+        body.querySelector('.nudge-pixel')?.remove();
+        body.appendChild(buildPixelImg(url));
+      }
+    },
+    getSidebarRoot(c) {
+      return (
+        c.querySelector(
+          '[data-testid="composer:actions"], [class*="ComposerActions"], [class*="composer-actions"]'
+        ) ?? c
+      );
+    }
+  },
+
+  // ── Infomaniak Mail (mail.infomaniak.com) ─────────────────────
+  infomaniak: {
+    findComposeWindows() {
+      const found = [];
+      document.querySelectorAll(
+        'button[title*="Send"], button[aria-label*="Send"], ' +
+        'button[data-action="send"], button.k-btn-compose-send'
+      ).forEach(sendBtn => {
+        const container = sendBtn.closest(
+          '[class*="compose"], [class*="Compose"], [role="dialog"], form[class*="mail"]'
+        );
+        if (container) found.push({ container, sendBtn });
+      });
+      return found;
+    },
+    extractSubject(c) {
+      return (
+        c.querySelector(
+          'input[name="subject"], input[placeholder*="ubject"], input[aria-label*="ubject"]'
+        )?.value.trim() ?? ''
+      );
+    },
+    extractRecipients(c) {
+      const emails = new Set();
+      c.querySelectorAll('[class*="recipient"] [title], [class*="to-field"] [title]').forEach(el => {
+        const txt = el.getAttribute('title') || el.textContent || '';
+        const m = txt.match(/[^\s@;,<>]+@[^\s@;,<>]+\.[^\s@;,<>]+/);
+        if (m) emails.add(m[0]);
+      });
+      if (emails.size) return [...emails];
+      const input = c.querySelector('input[aria-label*="To"], input[name="to"], input[placeholder*="To"]');
+      if (input?.value) {
+        (input.value.match(/[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+/g) ?? []).forEach(e => emails.add(e));
+      }
+      return [...emails];
+    },
+    extractBody(c) {
+      return (
+        c.querySelector('[contenteditable="true"], [role="textbox"], .note-editable')?.innerText.trim() ?? ''
+      );
+    },
+    injectPixel(c, url) {
+      const body = c.querySelector('[contenteditable="true"], [role="textbox"], .note-editable');
+      if (!body) return;
+      body.querySelector('.nudge-pixel')?.remove();
+      body.appendChild(buildPixelImg(url));
+    },
+    getSidebarRoot(c) {
+      return (
+        c.querySelector('[class*="toolbar"], [class*="actions"], [class*="compose-footer"]') ?? c
+      );
+    }
+  },
+
+  // ── Yahoo Mail (mail.yahoo.com) ───────────────────────────────
+  yahoo: {
+    findComposeWindows() {
+      const found = [];
+      document.querySelectorAll(
+        'button[data-test-id="btn-send"], button[aria-label="Send Email"], button[aria-label="Send"]'
+      ).forEach(sendBtn => {
+        const container = sendBtn.closest(
+          '[data-test-id="compose-view"], [class*="compose"], [role="dialog"]'
+        );
+        if (container) found.push({ container, sendBtn });
+      });
+      return found;
+    },
+    extractSubject(c) {
+      return (
+        c.querySelector(
+          'input[data-test-id="compose-subject"], input[placeholder*="ubject"]'
+        )?.value.trim() ?? ''
+      );
+    },
+    extractRecipients(c) {
+      const emails = new Set();
+      c.querySelectorAll(
+        '[data-test-id="to"] .recipient-text, [data-test-id="to"] [title], ' +
+        '[class*="addressList"] [title]'
+      ).forEach(el => {
+        const txt = el.getAttribute('title') || el.textContent || '';
+        const m = txt.match(/[^\s@;<>]+@[^\s@;<>]+\.[^\s@;<>]+/);
+        if (m) emails.add(m[0]);
+      });
+      if (emails.size) return [...emails];
+      const input = c.querySelector('[data-test-id="yui-to"] input, input[aria-label*="To"]');
+      if (input?.value) {
+        (input.value.match(/[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+/g) ?? []).forEach(e => emails.add(e));
+      }
+      return [...emails];
+    },
+    extractBody(c) {
+      return (
+        c.querySelector(
+          '[data-test-id="rte"] [contenteditable="true"], ' +
+          '[aria-label*="Body"][contenteditable="true"], ' +
+          '[class*="editor"] [contenteditable="true"]'
+        )?.innerText.trim() ?? ''
+      );
+    },
+    injectPixel(c, url) {
+      const body = c.querySelector(
+        '[data-test-id="rte"] [contenteditable="true"], ' +
+        '[aria-label*="Body"][contenteditable="true"], ' +
+        '[class*="editor"] [contenteditable="true"]'
+      );
+      if (!body) return;
+      body.querySelector('.nudge-pixel')?.remove();
+      body.appendChild(buildPixelImg(url));
+    },
+    getSidebarRoot(c) {
+      return (
+        c.querySelector('[data-test-id="compose-header"], [class*="compose-toolbar"]') ?? c
       );
     }
   }

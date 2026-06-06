@@ -27,6 +27,29 @@ public interface TrackingEventRepository extends JpaRepository<TrackingEvent, Lo
     long countByEmailAndType(TrackedEmail email, EventType type);
 
     /**
+     * Count genuine (non-bot) events of a specific type.
+     * Used by TrackingService hot-path to exclude suspected-bot opens
+     * from lead-score and notification counts.
+     */
+    long countByEmailAndTypeAndSuspectedBotFalse(TrackedEmail email, EventType type);
+
+    /**
+     * P4: Retrieve only the most recent event of a given type for a single email.
+     * Used in TrackingService hot-path to get lastOpenAt without loading all events.
+     * Spring Data JPA generates: SELECT … ORDER BY timestamp DESC LIMIT 1
+     */
+    java.util.Optional<TrackingEvent> findFirstByEmailAndTypeOrderByTimestampDesc(
+            TrackedEmail email, EventType type);
+
+    /**
+     * Most recent genuine (non-bot) open for an email.
+     * Used in the recordClick hot-path so that a bot pre-fetch does not
+     * artificially inflate the recency component of the lead score.
+     */
+    java.util.Optional<TrackingEvent> findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(
+            TrackedEmail email, EventType type);
+
+    /**
      * Q7: Aggregate open events by day-of-week and hour directly in the DB.
      * Returns rows of [dayOfWeek (1=Mon), hour (0-23), count] sorted by count desc.
      * Replaces loading every open event into memory for send-time analysis.

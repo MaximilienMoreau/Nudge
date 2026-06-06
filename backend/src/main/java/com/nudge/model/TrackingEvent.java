@@ -3,6 +3,7 @@ package com.nudge.model;
 import jakarta.persistence.*;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.LocalDateTime;
 
@@ -14,9 +15,9 @@ import java.time.LocalDateTime;
 @Table(
     name = "tracking_events",
     indexes = {
-        @Index(name = "idx_tracking_events_email_id",  columnList = "email_id"),
-        @Index(name = "idx_tracking_events_type",      columnList = "type"),
-        @Index(name = "idx_tracking_events_timestamp", columnList = "timestamp")
+        @Index(name = "idx_tracking_events_email_id",   columnList = "email_id"),
+        @Index(name = "idx_tracking_events_email_type", columnList = "email_id, type"),
+        @Index(name = "idx_tracking_events_timestamp",  columnList = "timestamp")
     }
 )
 @Data
@@ -35,12 +36,22 @@ public class TrackingEvent {
     @Column(nullable = false)
     private EventType type;
 
-    @Column(nullable = false)
-    private LocalDateTime timestamp = LocalDateTime.now();
+    // Consistent with TrackedEmail.createdAt: set by Hibernate at INSERT, not at object construction
+    @CreationTimestamp
+    @Column(nullable = false, updatable = false)
+    private LocalDateTime timestamp;
 
     /** Recipient's IP address (for geo insights, optional) */
     private String ipAddress;
 
     /** Recipient's email client User-Agent string */
     private String userAgent;
+
+    /**
+     * True when this event was classified as a bot/proxy pre-fetch by
+     * BotDetectionService. Suspected-bot events are persisted for audit
+     * purposes but excluded from lead-score computation and notifications.
+     */
+    @Column(nullable = false)
+    private boolean suspectedBot = false;
 }

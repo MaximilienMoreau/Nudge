@@ -12,7 +12,7 @@ Nudge tracks email opens in real-time, scores engagement, and generates AI-power
 nudge/
 ├── backend/          Spring Boot 3 (Java 17) — REST API + WebSocket
 ├── frontend/         Vanilla HTML/CSS/JS — Dashboard UI
-├── extension/        Chrome Extension (Manifest V3) — Gmail integration
+├── extension/        Chrome Extension (Manifest V3) — Gmail, Outlook, Proton Mail, Infomaniak, Yahoo
 └── database/         PostgreSQL schema / init scripts
 ```
 
@@ -135,12 +135,14 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
 ```json
 {
   "subject": "Follow up on our meeting",
-  "recipientEmail": "john@company.com",
+  "recipientEmails": ["john@company.com", "jane@company.com"],
   "content": "Hi John, just wanted to follow up..."
 }
 ```
 
-For multiple recipients, use `recipientEmails` instead (one `TrackedEmail` per recipient, each with its own `trackingId`):
+> `recipientEmails` (array) is preferred. `recipientEmail` (single string) is also accepted for backwards compatibility — when both are present, `recipientEmails` takes precedence.
+
+**Response includes:**
 ```json
 {
   "subject": "Product demo",
@@ -207,30 +209,7 @@ Embed in emails:
 }
 ```
 
-`openCount` and `engagementScore` are computed server-side from the database — do not pass them.
-
-**Response:**
-```json
-{
-  "suggestedSubject": "Re: Follow up on our meeting",
-  "followUpText": "Hi John, I wanted to circle back..."
-}
-```
-
-**POST `/api/ai/send-time`** — no body required.
-
-**Response:**
-```json
-{
-  "hasData": true,
-  "bestDay": "Tuesday",
-  "bestHour": "10:00",
-  "suggestion": "Send on Tuesday morning",
-  "rationale": "Based on 12 opens across your tracked emails"
-}
-```
-
----
+> `engagementScore` and `openCount` are intentionally not accepted from the client — the server recomputes them from the database to prevent tampering.
 
 ### WebSocket
 
@@ -249,17 +228,7 @@ Subscribe to: `/user/queue/notifications`
   "recipientEmail": "john@company.com",
   "openCount": 2,
   "leadScore": 65,
-  "timestamp": "2026-01-15T10:30:00"
-}
-```
-
-**Notification payload (FOLLOW_UP_REMINDER):**
-```json
-{
-  "type": "FOLLOW_UP_REMINDER",
-  "emailId": 42,
-  "subject": "Follow up on our meeting",
-  "recipientEmail": "john@company.com"
+  "timestamp": "2027-01-15T10:30:00"
 }
 ```
 
@@ -267,20 +236,19 @@ Subscribe to: `/user/queue/notifications`
 
 ## Lead Scoring
 
-The Reply Probability Score (0–100) is computed from:
+The Reply Probability Score (0–100) is computed from genuine opens only — bot/proxy pre-fetches (Apple MPP, Google Image Proxy, MS Exchange Safe Links, etc.) are detected and excluded automatically.
 
-| Signal              | Points              |
-|---------------------|---------------------|
-| Opens volume        | 15 per open, max 40 |
-| Recency (< 1 hour)  | 40                  |
-| Recency (< 1 day)   | 30                  |
-| Recency (< 3 days)  | 20                  |
-| Recency (< 7 days)  | 10                  |
-| Frequency (> 5×)    | 20                  |
-| Frequency (> 3×)    | 15                  |
-| Frequency (> 1×)    | 10                  |
-| Click (≥ 2 clicks)  | 20                  |
-| Click (≥ 1 click)   | 10                  |
+| Signal              | Points                                      |
+|---------------------|---------------------------------------------|
+| Opens volume        | 15 per open, max 40                         |
+| Recency             | Continuous exponential decay: `40 × e^(−λt)`, half-life = 6 h |
+| Frequency (> 5×)    | 20                                          |
+| Frequency (> 3×)    | 15                                          |
+| Frequency (> 1×)    | 10                                          |
+| Click (1 click)     | 10                                          |
+| Click (≥ 2 clicks)  | 20                                          |
+
+Recency examples: just opened → 40 pts · 6 h ago → 20 pts · 12 h ago → 10 pts · 48 h+ → 0 pts.
 
 Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 
@@ -288,8 +256,8 @@ Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 
 ## Chrome Extension Usage
 
-1. Sign in via the popup with your Nudge account credentials
-2. Open Gmail and compose a new email
+1. Sign in via the popup using your Nudge account credentials
+2. Open Gmail, Outlook, Proton Mail, Infomaniak, or Yahoo Mail and compose a new email
 3. A **"📨 Nudge: ON"** button appears next to the Send button
 4. Click Send — Nudge automatically registers the email and injects the tracking pixel
 5. When the recipient opens the email, you get an instant notification on your dashboard

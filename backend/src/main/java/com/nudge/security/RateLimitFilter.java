@@ -3,14 +3,17 @@ package com.nudge.security;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import com.nudge.util.IpUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -25,11 +28,21 @@ import java.util.concurrent.atomic.AtomicInteger;
  * Implementation: sliding-window counter keyed on (IP|trackingId) with 60-second reset.
  * This is an in-memory, single-node implementation — suitable for MVP.
  * Replace with Redis + Bucket4j for multi-instance deployments.
+ *
+ * S4: X-Forwarded-For is only trusted when the direct connection originates from a
+ *     configured trusted proxy range — same logic as TrackingService.extractIp().
+ *     Without this check an attacker could spoof their IP to bypass rate limiting.
  */
 @Component
 public class RateLimitFilter implements Filter {
 
     private static final Logger log = LoggerFactory.getLogger(RateLimitFilter.class);
+
+    private final Set<String> trustedProxies;
+
+    public RateLimitFilter(@Qualifier("trustedProxySet") Set<String> trustedProxies) {
+        this.trustedProxies = trustedProxies;
+    }
 
     private static final long WINDOW_MS = 60_000L;
 
@@ -63,7 +76,12 @@ public class RateLimitFilter implements Filter {
         } else if ("GET".equals(method) && path.startsWith("/track/open/")) {
             // Key on the tracking ID itself — not the caller IP — to prevent open-count inflation
             String trackingId = path.substring("/track/open/".length());
-            key   = "track:" + trackingId;
+            key   = "track-open:" + trackingId;
+            limit = TRACK_LIMIT;
+        } else if ("GET".equals(method) && path.startsWith("/track/click/")) {
+            // Same inflation guard for click events
+            String trackingId = path.substring("/track/click/".length());
+            key   = "track-click:" + trackingId;
             limit = TRACK_LIMIT;
         } else {
             chain.doFilter(req, res);
@@ -110,11 +128,27 @@ public class RateLimitFilter implements Filter {
         if (removed > 0) log.debug("RateLimitFilter evicted {} expired entries", removed);
     }
 
+    /**
+     * S4: Only trust X-Forwarded-For when the direct connection comes from a
+     * configured trusted proxy range. Mirrors TrackingService.extractIp() so
+     * the two are consistent and neither can be trivially bypassed by IP spoofing.
+     */
     private String getClientIp(HttpServletRequest request) {
-        String xff = request.getHeader("X-Forwarded-For");
-        if (xff != null && !xff.isBlank()) {
-            return xff.split(",")[0].trim();
+        String remoteAddr = request.getRemoteAddr();
+        if (isTrustedProxy(remoteAddr)) {
+            String xff = request.getHeader("X-Forwarded-For");
+            if (xff != null && !xff.isBlank()) {
+                return xff.split(",")[0].trim();
+            }
         }
-        return request.getRemoteAddr();
+        return remoteAddr;
+    }
+
+    private boolean isTrustedProxy(String ip) {
+        if (ip == null) return false;
+        for (String trusted : trustedProxies) {
+            if (IpUtils.matches(ip, trusted)) return true;
+        }
+        return false;
     }
 }

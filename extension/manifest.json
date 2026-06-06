@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Nudge — Email Tracker",
-  "version": "1.1.0",
-  "description": "Track emails across Gmail, Outlook, and web email clients. Know when recipients open your emails.",
+  "version": "1.2.0",
+  "description": "Track emails across Gmail, Outlook, Proton Mail, Infomaniak, and Yahoo Mail. Know when recipients open your emails.",
 
   "permissions": [
     "storage",
@@ -15,6 +15,10 @@
     "https://outlook.live.com/*",
     "https://outlook.office.com/*",
     "https://outlook.office365.com/*",
+    "https://mail.proton.me/*",
+    "https://mail.protonmail.com/*",
+    "https://mail.infomaniak.com/*",
+    "https://mail.yahoo.com/*",
     "http://localhost:8080/*"
   ],
 
@@ -28,7 +32,11 @@
         "https://mail.google.com/*",
         "https://outlook.live.com/*",
         "https://outlook.office.com/*",
-        "https://outlook.office365.com/*"
+        "https://outlook.office365.com/*",
+        "https://mail.proton.me/*",
+        "https://mail.protonmail.com/*",
+        "https://mail.infomaniak.com/*",
+        "https://mail.yahoo.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_idle"

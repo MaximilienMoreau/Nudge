@@ -13,8 +13,9 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import com.nudge.util.IpUtils;
+
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Set;
 
 /**
@@ -22,63 +23,91 @@ import java.util.Set;
  * Records them in the database and fires a real-time WebSocket notification
  * to the email's owner.
  *
- * Q6: The entire recordOpen method is @Transactional so the event save and
- *     the score computation happen in a single DB transaction.
+ * Q6:  The entire recordOpen method is @Transactional so the event save and
+ *      the score computation happen in a single DB transaction.
  *
- * S4: X-Forwarded-For is only trusted when the request originates from a
- *     configured trusted proxy range; otherwise the raw remote address is used.
+ * P4:  Hot-path optimisation — instead of loading ALL events to compute the
+ *      score, we run two COUNT queries and one findFirst query:
+ *        countByEmailAndTypeAndSuspectedBotFalse(OPEN)  → genuine openCount
+ *        countByEmailAndType(CLICK)                     → clickCount
+ *        findFirstByEmail…SuspectedBotFalse…Desc(OPEN)  → lastOpenAt
+ *      This keeps response time O(1) regardless of how many events exist.
+ *
+ * S4:  X-Forwarded-For is only trusted when the request originates from a
+ *      configured trusted proxy range; otherwise the raw remote address is used.
+ *
+ * BD:  Suspected-bot events (Apple MPP, Google Image Proxy, rapid re-fetches…)
+ *      are persisted with suspectedBot = true and excluded from score/notification.
  */
 @Service
 public class TrackingService {
 
     private static final Logger log = LoggerFactory.getLogger(TrackingService.class);
 
-    private final TrackedEmailRepository emailRepo;
+    private final TrackedEmailRepository  emailRepo;
     private final TrackingEventRepository eventRepo;
-    private final LeadScoringService leadScoringService;
-    private final NotificationService notificationService;
-    private final Set<String> trustedProxies;
+    private final LeadScoringService      leadScoringService;
+    private final NotificationService     notificationService;
+    private final BotDetectionService     botDetectionService;
+    private final Set<String>             trustedProxies;
 
     public TrackingService(TrackedEmailRepository emailRepo,
                            TrackingEventRepository eventRepo,
                            LeadScoringService leadScoringService,
                            NotificationService notificationService,
+                           BotDetectionService botDetectionService,
                            @Qualifier("trustedProxySet") Set<String> trustedProxies) {
-        this.emailRepo          = emailRepo;
-        this.eventRepo          = eventRepo;
-        this.leadScoringService = leadScoringService;
+        this.emailRepo           = emailRepo;
+        this.eventRepo           = eventRepo;
+        this.leadScoringService  = leadScoringService;
         this.notificationService = notificationService;
-        this.trustedProxies     = trustedProxies;
+        this.botDetectionService = botDetectionService;
+        this.trustedProxies      = trustedProxies;
     }
 
     /**
      * Record an OPEN event triggered by a tracking pixel load.
      *
+     * BD:  The event is classified as a suspected bot before being saved.
+     *      Bot events are stored for audit but do not contribute to the lead
+     *      score and do not trigger a WebSocket notification.
+     *
+     * P4:  Score computed from 2 COUNT queries (genuine opens only) — O(1).
+     *
      * @param trackingId UUID embedded in the pixel URL
      * @param request    HTTP request for IP/User-Agent extraction
      * @return true if the email was found and event recorded, false otherwise
      */
-    @Transactional          // Q6: single transaction for save + score recompute
+    @Transactional
     public boolean recordOpen(String trackingId, HttpServletRequest request) {
         return emailRepo.findByTrackingId(trackingId).map(email -> {
+            String userAgent    = request.getHeader("User-Agent");
+            boolean isBot       = botDetectionService.isSuspectedBot(userAgent, trackingId);
+
             TrackingEvent event = new TrackingEvent();
             event.setEmail(email);
             event.setType(EventType.OPEN);
             event.setTimestamp(LocalDateTime.now());
             event.setIpAddress(extractIp(request));
-            event.setUserAgent(request.getHeader("User-Agent"));
+            event.setUserAgent(userAgent);
+            event.setSuspectedBot(isBot);
             eventRepo.save(event);
 
-            List<TrackingEvent> allEvents = eventRepo.findByEmailOrderByTimestampDesc(email);
-            int score = leadScoringService.computeScore(allEvents);
-            int openCount = (int) allEvents.stream()
-                    .filter(e -> e.getType() == EventType.OPEN)
-                    .count();
+            if (isBot) {
+                log.debug("Bot open recorded (not scored) for email='{}' trackingId={}",
+                        email.getSubject(), trackingId);
+                return true;
+            }
 
-            log.info("Email opened: '{}' by {} (total opens: {}, score: {})",
+            // P4: COUNT genuine opens only — O(1) regardless of event history
+            long openCount  = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN);
+            long clickCount = eventRepo.countByEmailAndType(email, EventType.CLICK);
+            int  score      = leadScoringService.computeScore(openCount, clickCount, event.getTimestamp());
+
+            log.info("Email opened: '{}' by {} (genuine opens: {}, score: {})",
                     email.getSubject(), email.getRecipientEmail(), openCount, score);
 
-            fireNotification(email, openCount, score);
+            fireNotification(email, EventType.OPEN, openCount, score);
             return true;
         }).orElse(false);
     }
@@ -86,9 +115,15 @@ public class TrackingService {
     /**
      * Record a CLICK event triggered by a tracked link redirect.
      *
+     * Clicks are always attributed to the human (bots do not follow links),
+     * so no bot-detection check is needed here. The score still uses genuine
+     * open counts to avoid inflating recency from bot pre-fetches.
+     *
+     * P4: COUNT + single-row findFirst — avoids loading all events.
+     *
      * @param trackingId UUID identifying the email
      * @param request    HTTP request for IP/User-Agent
-     * @return the original redirect URL, or null if email not found
+     * @return non-null sentinel when the email was found, null otherwise
      */
     @Transactional
     public String recordClick(String trackingId, HttpServletRequest request) {
@@ -101,26 +136,31 @@ public class TrackingService {
             event.setUserAgent(request.getHeader("User-Agent"));
             eventRepo.save(event);
 
-            List<TrackingEvent> allEvents = eventRepo.findByEmailOrderByTimestampDesc(email);
-            int score = leadScoringService.computeScore(allEvents);
+            // P4 + BD: genuine open count + last genuine open timestamp
+            long openCount  = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN);
+            long clickCount = eventRepo.countByEmailAndType(email, EventType.CLICK);
+            LocalDateTime lastOpen = eventRepo
+                    .findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(email, EventType.OPEN)
+                    .map(TrackingEvent::getTimestamp)
+                    .orElse(null);
+            int score = leadScoringService.computeScore(openCount, clickCount, lastOpen);
 
             log.info("Link clicked in email '{}' by {}", email.getSubject(), email.getRecipientEmail());
 
-            fireNotification(email,
-                    (int) allEvents.stream().filter(e -> e.getType() == EventType.OPEN).count(),
-                    score);
-            return "clicked"; // caller uses the ?url= param for the actual redirect
+            fireNotification(email, EventType.CLICK, openCount, score);
+            return "clicked";
         }).orElse(null);
     }
 
-    private void fireNotification(TrackedEmail email, int openCount, int score) {
+    private void fireNotification(TrackedEmail email, EventType eventType, long openCount, int score) {
         String ownerEmail = email.getUser().getEmail();
+        String notifType  = eventType == EventType.CLICK ? "EMAIL_CLICKED" : "EMAIL_OPENED";
         NotificationDTO notification = new NotificationDTO(
-                "EMAIL_OPENED",
+                notifType,
                 email.getId(),
                 email.getSubject(),
                 email.getRecipientEmail(),
-                openCount,
+                (int) openCount,
                 score,
                 LocalDateTime.now()
         );
@@ -144,11 +184,8 @@ public class TrackingService {
 
     private boolean isTrustedProxy(String ip) {
         if (ip == null) return false;
-        // Exact match or CIDR prefix match (simple implementation)
         for (String trusted : trustedProxies) {
-            if (ip.equals(trusted) || ip.startsWith(trusted.replaceAll("/.*", ""))) {
-                return true;
-            }
+            if (IpUtils.matches(ip, trusted)) return true;
         }
         return false;
     }
