@@ -1,4 +1,4 @@
-# Nudge — Production Deployment Guide
+# Nudge: Production Deployment Guide
 
 ## Quick start (Docker Compose)
 
