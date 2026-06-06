@@ -27,17 +27,17 @@ import java.util.stream.Collectors;
 /**
  * Core email management service.
  *
- * Q4: N+1 queries fixed — events for all emails are batch-fetched in a single
+ * N+1 queries fixed — events for all emails are batch-fetched in a single
  *     query, then grouped into a Map<emailId, List<event>> before DTO assembly.
  *
- * S8: Email content is encrypted at rest via EncryptionService.
+ * Email content is encrypted at rest via EncryptionService.
  *
- * F1: Soft-delete via archivedAt timestamp.
+ * Soft-delete via archivedAt timestamp.
  *
- * F3: Multi-recipient support — createTrackedEmail accepts a list of recipient
+ * Multi-recipient support — createTrackedEmail accepts a list of recipient
  *     emails and returns one EmailDTO per recipient.
  *
- * A3: getEmailsForUser supports pagination.
+ * getEmailsForUser supports pagination.
  */
 @Service
 public class EmailService {
@@ -68,10 +68,10 @@ public class EmailService {
     /**
      * Register one or more emails for tracking.
      *
-     * F3: If request.recipientEmails has multiple entries, one TrackedEmail is created
+     * If request.recipientEmails has multiple entries, one TrackedEmail is created
      *     per recipient, each with its own unique trackingId.
      *
-     * S8: Email content is encrypted before persisting.
+     * Email content is encrypted before persisting.
      *
      * @return list of EmailDTOs (one per recipient)
      */
@@ -80,20 +80,20 @@ public class EmailService {
         User user = userRepo.findByEmail(userEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
 
-        // F3: Determine effective recipient list
+        // Determine effective recipient list
         List<String> recipients = request.getRecipientEmails();
         if (recipients == null || recipients.isEmpty()) {
             recipients = List.of(request.getRecipientEmail());
         }
 
-        String encryptedContent = encryptionService.encrypt(request.getContent()); // S8
+        String encryptedContent = encryptionService.encrypt(request.getContent()); 
 
         List<EmailDTO> results = new ArrayList<>();
         for (String recipient : recipients) {
             TrackedEmail email = new TrackedEmail();
             email.setUser(user);
             email.setSubject(request.getSubject());
-            email.setContent(encryptedContent);    // S8: stored encrypted
+            email.setContent(encryptedContent);    // stored encrypted
             email.setRecipientEmail(recipient);
             email.setTrackingId(UUID.randomUUID().toString());
             emailRepo.save(email);
@@ -105,7 +105,7 @@ public class EmailService {
     }
 
     /**
-     * A3: Paginated list of active tracked emails for the authenticated user.
+     * Paginated list of active tracked emails for the authenticated user.
      */
     public Page<EmailDTO> getEmailsForUser(String userEmail, Pageable pageable) {
         User user = userRepo.findByEmail(userEmail)
@@ -113,7 +113,7 @@ public class EmailService {
 
         Page<TrackedEmail> page = emailRepo.findByUserAndArchivedAtIsNullOrderByCreatedAtDesc(user, pageable);
 
-        // Q4: Batch-fetch all events for the current page in one query
+        // Batch-fetch all events for the current page in one query
         List<TrackedEmail> emails = page.getContent();
         Map<Long, List<TrackingEvent>> eventsByEmail = batchFetchEvents(emails);
 
@@ -128,7 +128,7 @@ public class EmailService {
     }
 
     /**
-     * F1: Soft-delete an email. Sets archivedAt to now; the row is kept in the DB.
+     * Soft-delete an email. Sets archivedAt to now; the row is kept in the DB.
      * Throws SecurityException if the email does not belong to the authenticated user.
      */
     @Transactional
@@ -168,7 +168,7 @@ public class EmailService {
     }
 
     /**
-     * F4: Schedule a follow-up reminder for an email.
+     * Schedule a follow-up reminder for an email.
      */
     @Transactional
     public void scheduleFollowUp(Long emailId, String userEmail, LocalDateTime scheduledAt) {
@@ -190,7 +190,7 @@ public class EmailService {
     }
 
     /**
-     * Q4: Batch-fetch events for a list of emails in one DB round-trip,
+     * Batch-fetch events for a list of emails in one DB round-trip,
      * then group them by email ID.
      */
     private Map<Long, List<TrackingEvent>> batchFetchEvents(List<TrackedEmail> emails) {
@@ -219,7 +219,7 @@ public class EmailService {
         EmailDTO dto = new EmailDTO();
         dto.setId(email.getId());
         dto.setSubject(email.getSubject());
-        // S8: decrypt content before sending to frontend
+        // decrypt content before sending to frontend
         dto.setContent(encryptionService.decrypt(email.getContent()));
         dto.setRecipientEmail(email.getRecipientEmail());
         dto.setTrackingId(email.getTrackingId());
