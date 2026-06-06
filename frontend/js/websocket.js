@@ -11,9 +11,9 @@
  */
 
 let stompClient   = null;
-let retryDelay    = 5000;
-const HOT_LEAD_THRESHOLD = 70;
+let retryDelay    = 5000;   // starts at 5s
 const MAX_DELAY   = 60000;
+const HOT_LEAD_THRESHOLD = 70;
 
 function connectWebSocket() {
   // Token is in an httpOnly cookie — no need to pass it explicitly.
@@ -29,7 +29,7 @@ function connectWebSocket() {
 
 function onConnected() {
   setWsDot(true);
-  retryDelay = 5000; on successful connection
+  retryDelay = 5000;  // reset backoff on successful connection
   console.log('[Nudge WS] Connected');
 
   stompClient.subscribe('/user/queue/notifications', frame => {
