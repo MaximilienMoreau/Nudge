@@ -21,8 +21,8 @@ import java.util.Map;
 /**
  * Authentication endpoints.
  *
- * F7: Added PUT /api/auth/password for authenticated password change.
- * S6: Added POST /api/auth/logout to revoke the current token server-side.
+ * Added PUT /api/auth/password for authenticated password change.
+ * Added POST /api/auth/logout to revoke the current token server-side.
  */
 @RestController
 @RequestMapping("/api/auth")
@@ -56,7 +56,7 @@ public class AuthController {
     }
 
     /**
-     * F7: PUT /api/auth/password — Change the authenticated user's password.
+     * PUT /api/auth/password — Change the authenticated user's password.
      * Returns a new JWT; the client must replace the stored token.
      */
     @PutMapping("/password")
@@ -67,7 +67,7 @@ public class AuthController {
     }
 
     /**
-     * S6: POST /api/auth/logout — Invalidate the current JWT server-side by
+     * POST /api/auth/logout — Invalidate the current JWT server-side by
      * incrementing the user's tokenVersion.
      */
     @PostMapping("/logout")

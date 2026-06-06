@@ -9,7 +9,7 @@ import org.springframework.stereotype.Service;
 /**
  * Sends real-time WebSocket notifications to specific users.
  *
- * F5: Also triggers an email fallback notification via EmailNotificationService
+ * Also triggers an email fallback notification via EmailNotificationService
  *     for open events. The email service gates itself on the
  *     nudge.notifications.email.enabled flag, so no SMTP config is needed in dev.
  */
@@ -36,7 +36,7 @@ public class NotificationService {
                 userEmail, notification.getSubject(), notification.getType());
         messagingTemplate.convertAndSendToUser(userEmail, "/queue/notifications", notification);
 
-        // F5: Email fallback for open events (gated by config flag)
+        // Email fallback for open events (gated by config flag)
         if ("EMAIL_OPENED".equals(notification.getType())) {
             emailNotificationService.sendOpenNotification(
                     userEmail, notification.getSubject(), notification.getRecipientEmail());

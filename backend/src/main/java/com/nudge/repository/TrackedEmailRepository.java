@@ -16,8 +16,8 @@ public interface TrackedEmailRepository extends JpaRepository<TrackedEmail, Long
 
     /**
      * All active (non-archived) emails for a user, newest first.
-     * F1: Filtering archived emails via archivedAt IS NULL.
-     * A3: Pageable support for large lists.
+     * Filtering archived emails via archivedAt IS NULL.
+     * Pageable support for large lists.
      */
     Page<TrackedEmail> findByUserAndArchivedAtIsNullOrderByCreatedAtDesc(User user, Pageable pageable);
 
@@ -25,7 +25,7 @@ public interface TrackedEmailRepository extends JpaRepository<TrackedEmail, Long
     List<TrackedEmail> findByUserAndArchivedAtIsNullOrderByCreatedAtDesc(User user);
 
     /**
-     * F4: Find emails where a follow-up was scheduled before now
+     * Find emails where a follow-up was scheduled before now
      * and has not yet been archived. Pageable variant prevents loading
      * unbounded results into memory in the scheduler.
      */

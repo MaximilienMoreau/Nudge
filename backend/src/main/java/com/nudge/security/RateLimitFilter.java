@@ -18,7 +18,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * S5: Simple token-bucket rate limiter applied to sensitive endpoints.
+ * Simple token-bucket rate limiter applied to sensitive endpoints.
  *
  * Protected routes:
  *   POST /api/auth/login    — 10 requests per minute per IP (brute-force guard)
@@ -29,7 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * This is an in-memory, single-node implementation — suitable for MVP.
  * Replace with Redis + Bucket4j for multi-instance deployments.
  *
- * S4: X-Forwarded-For is only trusted when the direct connection originates from a
+ * X-Forwarded-For is only trusted when the direct connection originates from a
  *     configured trusted proxy range — same logic as TrackingService.extractIp().
  *     Without this check an attacker could spoof their IP to bypass rate limiting.
  */
@@ -51,8 +51,13 @@ public class RateLimitFilter implements Filter {
     private static final int REGISTER_LIMIT = 5;
     private static final int TRACK_LIMIT    = 30;
 
-    /** (key → [count, windowStartMs]) */
-    private final Map<String, long[]> counters = new ConcurrentHashMap<>();
+    private static final class RateBucket {
+        long count;
+        long windowStart;
+        RateBucket(long now) { this.count = 0L; this.windowStart = now; }
+    }
+
+    private final Map<String, RateBucket> counters = new ConcurrentHashMap<>();
 
     @Override
     public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
@@ -101,16 +106,15 @@ public class RateLimitFilter implements Filter {
 
     private boolean isRateLimited(String key, int limit) {
         long now = System.currentTimeMillis();
-        long[] slot = counters.computeIfAbsent(key, k -> new long[]{0L, now});
+        RateBucket bucket = counters.computeIfAbsent(key, k -> new RateBucket(now));
 
-        synchronized (slot) {
-            // Reset window if expired
-            if (now - slot[1] > WINDOW_MS) {
-                slot[0] = 0L;
-                slot[1] = now;
+        synchronized (bucket) {
+            if (now - bucket.windowStart > WINDOW_MS) {
+                bucket.count       = 0L;
+                bucket.windowStart = now;
             }
-            slot[0]++;
-            return slot[0] > limit;
+            bucket.count++;
+            return bucket.count > limit;
         }
     }
 
@@ -121,7 +125,7 @@ public class RateLimitFilter implements Filter {
         int before = counters.size();
         counters.entrySet().removeIf(entry -> {
             synchronized (entry.getValue()) {
-                return now - entry.getValue()[1] > WINDOW_MS;
+                return now - entry.getValue().windowStart > WINDOW_MS;
             }
         });
         int removed = before - counters.size();
@@ -129,7 +133,7 @@ public class RateLimitFilter implements Filter {
     }
 
     /**
-     * S4: Only trust X-Forwarded-For when the direct connection comes from a
+     * Only trust X-Forwarded-For when the direct connection comes from a
      * configured trusted proxy range. Mirrors TrackingService.extractIp() so
      * the two are consistent and neither can be trivially bypassed by IP spoofing.
      */

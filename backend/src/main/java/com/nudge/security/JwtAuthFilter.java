@@ -23,7 +23,7 @@ import java.io.IOException;
  * Intercepts every HTTP request, extracts the JWT from the Authorization header,
  * validates it, and loads the user into the SecurityContext.
  *
- * S6: After signature validation, the filter checks the "tv" (tokenVersion) claim
+ * After signature validation, the filter checks the "tv" (tokenVersion) claim
  * against the User's stored tokenVersion. If they differ, the token is rejected —
  * this revokes all tokens issued before the last password change or logout.
  */
@@ -53,7 +53,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             if (SecurityContextHolder.getContext().getAuthentication() == null) {
                 UserDetails userDetails = userDetailsService.loadUserByUsername(email);
 
-                // S6: Reject tokens whose tokenVersion no longer matches the DB
+                // Reject tokens whose tokenVersion no longer matches the DB
                 if (userDetails instanceof User user) {
                     int tokenTv = jwtUtil.extractTokenVersion(token);
                     if (tokenTv != user.getTokenVersion()) {

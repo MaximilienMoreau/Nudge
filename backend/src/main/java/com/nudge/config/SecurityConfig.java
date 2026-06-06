@@ -31,9 +31,9 @@ import java.util.List;
  * - Public routes: /api/auth/**, /track/**
  * - Everything else requires a valid JWT
  *
- * S2: CORS locked to origins listed in app.cors.allowed-origins.
+ * CORS locked to origins listed in app.cors.allowed-origins.
  *     allowCredentials is NOT set (we use JWT in Authorization headers, not cookies).
- * S5: RateLimitFilter runs before the JWT filter.
+ * RateLimitFilter runs before the JWT filter.
  */
 @Configuration
 @EnableWebSecurity
@@ -43,7 +43,7 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     private final RateLimitFilter rateLimitFilter;
 
-    /** S2: Injected from application.properties / env var */
+    /** Injected from application.properties / env var */
     @Value("${app.cors.allowed-origins:*}")
     private String corsAllowedOrigins;
 
@@ -68,7 +68,7 @@ public class SecurityConfig {
                 .anyRequest().authenticated()
             )
             .authenticationProvider(authenticationProvider())
-            // S5: Rate limiter before JWT filter
+            // Rate limiter before JWT filter
             .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
 

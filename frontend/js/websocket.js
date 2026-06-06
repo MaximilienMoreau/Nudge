@@ -1,17 +1,18 @@
 /**
  * websocket.js — Real-time notification client
  *
- * A2:  Uses NUDGE_CONFIG.WS_URL from config.js.
- * S3:  Passes ?token= in the SockJS URL so the server validates at HTTP level.
- * U6:  Exponential backoff on reconnect (5s → 10s → 20s → 40s, capped at 60s).
- * P1:  On EMAIL_OPENED notification, patches only the affected table row
+ *  Uses NUDGE_CONFIG.WS_URL from config.js.
+ *  Authenticates via the httpOnly cookie sent automatically on the SockJS handshake.
+ *  Exponential backoff on reconnect (5s → 10s → 20s → 40s, capped at 60s).
+ *  On EMAIL_OPENED notification, patches only the affected table row
  *      by fetching the updated email DTO — no full table reload.
- * P4:  SockJS and STOMP are loaded via <script defer> in dashboard.html,
+ *  SockJS and STOMP are loaded via <script defer> in dashboard.html,
  *      not dynamically injected here.
  */
 
 let stompClient   = null;
-let retryDelay    = 5000;   // U6: starts at 5s
+let retryDelay    = 5000;
+const HOT_LEAD_THRESHOLD = 70;
 const MAX_DELAY   = 60000;
 
 function connectWebSocket() {
@@ -28,7 +29,7 @@ function connectWebSocket() {
 
 function onConnected() {
   setWsDot(true);
-  retryDelay = 5000;  // U6: reset backoff on successful connection
+  retryDelay = 5000; on successful connection
   console.log('[Nudge WS] Connected');
 
   stompClient.subscribe('/user/queue/notifications', frame => {
@@ -56,7 +57,7 @@ async function handleNotification(notification) {
   const { type, emailId, subject, recipientEmail, openCount, leadScore } = notification;
 
   if (type === 'EMAIL_OPENED') {
-    const isHot = leadScore >= 70;
+    const isHot = leadScore >= HOT_LEAD_THRESHOLD;
     const title = isHot ? '🔥 Hot Lead!' : '📬 Email Opened';
     const msg   = `"${subject}" opened by ${recipientEmail} (${openCount}x, score: ${leadScore})`;
 
@@ -64,7 +65,7 @@ async function handleNotification(notification) {
       showToast(title, msg, isHot ? 'success' : 'info');
     }
 
-    // P1: Fetch only the updated email DTO and patch the table row
+    // Fetch only the updated email DTO and patch the table row
     try {
       const res = await fetch(`${NUDGE_CONFIG.API_BASE}/api/emails/${emailId}`, {
         credentials: 'include'

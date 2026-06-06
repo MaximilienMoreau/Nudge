@@ -23,17 +23,17 @@ import java.util.Set;
  * Records them in the database and fires a real-time WebSocket notification
  * to the email's owner.
  *
- * Q6:  The entire recordOpen method is @Transactional so the event save and
+ *  The entire recordOpen method is @Transactional so the event save and
  *      the score computation happen in a single DB transaction.
  *
- * P4:  Hot-path optimisation — instead of loading ALL events to compute the
+ *  Hot-path optimisation — instead of loading ALL events to compute the
  *      score, we run two COUNT queries and one findFirst query:
  *        countByEmailAndTypeAndSuspectedBotFalse(OPEN)  → genuine openCount
  *        countByEmailAndType(CLICK)                     → clickCount
  *        findFirstByEmail…SuspectedBotFalse…Desc(OPEN)  → lastOpenAt
  *      This keeps response time O(1) regardless of how many events exist.
  *
- * S4:  X-Forwarded-For is only trusted when the request originates from a
+ *  X-Forwarded-For is only trusted when the request originates from a
  *      configured trusted proxy range; otherwise the raw remote address is used.
  *
  * BD:  Suspected-bot events (Apple MPP, Google Image Proxy, rapid re-fetches…)
@@ -72,7 +72,7 @@ public class TrackingService {
      *      Bot events are stored for audit but do not contribute to the lead
      *      score and do not trigger a WebSocket notification.
      *
-     * P4:  Score computed from 2 COUNT queries (genuine opens only) — O(1).
+     *  Score computed from 2 COUNT queries (genuine opens only) — O(1).
      *
      * @param trackingId UUID embedded in the pixel URL
      * @param request    HTTP request for IP/User-Agent extraction
@@ -99,7 +99,7 @@ public class TrackingService {
                 return true;
             }
 
-            // P4: COUNT genuine opens only — O(1) regardless of event history
+            // COUNT genuine opens only — O(1) regardless of event history
             long openCount  = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN);
             long clickCount = eventRepo.countByEmailAndType(email, EventType.CLICK);
             int  score      = leadScoringService.computeScore(openCount, clickCount, event.getTimestamp());
@@ -119,14 +119,14 @@ public class TrackingService {
      * so no bot-detection check is needed here. The score still uses genuine
      * open counts to avoid inflating recency from bot pre-fetches.
      *
-     * P4: COUNT + single-row findFirst — avoids loading all events.
+     * COUNT + single-row findFirst — avoids loading all events.
      *
      * @param trackingId UUID identifying the email
      * @param request    HTTP request for IP/User-Agent
      * @return non-null sentinel when the email was found, null otherwise
      */
     @Transactional
-    public String recordClick(String trackingId, HttpServletRequest request) {
+    public boolean recordClick(String trackingId, HttpServletRequest request) {
         return emailRepo.findByTrackingId(trackingId).map(email -> {
             TrackingEvent event = new TrackingEvent();
             event.setEmail(email);
@@ -148,8 +148,8 @@ public class TrackingService {
             log.info("Link clicked in email '{}' by {}", email.getSubject(), email.getRecipientEmail());
 
             fireNotification(email, EventType.CLICK, openCount, score);
-            return "clicked";
-        }).orElse(null);
+            return true;
+        }).orElse(false);
     }
 
     private void fireNotification(TrackedEmail email, EventType eventType, long openCount, int score) {
@@ -168,7 +168,7 @@ public class TrackingService {
     }
 
     /**
-     * S4: Extract real IP, only trusting X-Forwarded-For when the direct
+     * Extract real IP, only trusting X-Forwarded-For when the direct
      * connection comes from a configured trusted proxy range.
      */
     private String extractIp(HttpServletRequest request) {

@@ -18,10 +18,10 @@ import java.util.Date;
 /**
  * Utility for creating and validating JWT tokens.
  *
- * P2: The signing key is derived once at startup (@PostConstruct) and cached
+ * The signing key is derived once at startup (@PostConstruct) and cached
  *     rather than re-decoded on every request.
  *
- * S6: Tokens include a "tv" (tokenVersion) claim. The filter compares it
+ * Tokens include a "tv" (tokenVersion) claim. The filter compares it
  *     against the User.tokenVersion stored in the DB; a mismatch rejects
  *     the token — effectively revoking all tokens issued before the version
  *     was incremented (e.g. on password change or explicit logout).
@@ -37,7 +37,7 @@ public class JwtUtil {
     @Value("${jwt.expiration}")
     private long expirationMs;
 
-    /** P2: Cached signing key — derived once at startup. */
+    /** Cached signing key — derived once at startup. */
     private Key signingKey;
 
     @PostConstruct
@@ -51,7 +51,7 @@ public class JwtUtil {
         return Jwts.builder()
                 .setSubject(email)
                 .claim("userId", userId)
-                .claim("tv", tokenVersion)         // S6: token version
+                .claim("tokenVersion", tokenVersion)         // token version
                 .setIssuedAt(new Date())
                 .setExpiration(new Date(System.currentTimeMillis() + expirationMs))
                 .signWith(signingKey, SignatureAlgorithm.HS256)
@@ -75,18 +75,18 @@ public class JwtUtil {
         return extractClaims(token).get("userId", Long.class);
     }
 
-    /** S6: Extract the tokenVersion embedded in the JWT. */
+    /** Extract the tokenVersion embedded in the JWT. */
     public int extractTokenVersion(String token) {
-        Object tv = extractClaims(token).get("tv");
-        if (tv == null) return 0;
-        return ((Number) tv).intValue();
+        Object tokenVersion = extractClaims(token).get("tokenVersion");
+        if (tokenVersion == null) return 0;
+        return ((Number) tokenVersion).intValue();
     }
 
     /** Returns true if the token signature is valid and it has not expired. */
     public boolean isValid(String token) {
         try {
             Claims claims = extractClaims(token);
-            return !claims.getExpiration().before(new Date());
+            return claims.getExpiration().after(new Date());
         } catch (JwtException | IllegalArgumentException e) {
             log.debug("JWT validation failed: {}", e.getMessage());
             return false;

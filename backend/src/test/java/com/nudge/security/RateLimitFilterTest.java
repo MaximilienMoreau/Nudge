@@ -31,7 +31,7 @@ class RateLimitFilterTest {
         filter = new RateLimitFilter(Set.of());
     }
 
-    // ── S5: rate limiting ─────────────────────────────────────────────────────
+    // ── rate limiting ─────────────────────────────────────────────────────
 
     @Test
     void allowsRequests_belowLimit() throws Exception {
@@ -76,7 +76,7 @@ class RateLimitFilterTest {
         assertThat(resp.getStatus()).isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
     }
 
-    // ── S4: IP spoofing protection ────────────────────────────────────────────
+    // ── IP spoofing protection ────────────────────────────────────────────
 
     @Test
     void S4_ignoresXFF_whenNotFromTrustedProxy() throws Exception {

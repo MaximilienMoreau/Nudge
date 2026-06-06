@@ -19,10 +19,10 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * Handles user registration, login, logout, and password change.
  *
- * S6: tokenVersion is incremented on password change and logout so that all
+ * tokenVersion is incremented on password change and logout so that all
  *     previously issued JWTs are immediately rejected by JwtAuthFilter.
  *
- * F7: changePassword validates the current password before accepting a new one.
+ * changePassword validates the current password before accepting a new one.
  */
 @Service
 public class AuthService {
@@ -76,8 +76,8 @@ public class AuthService {
     }
 
     /**
-     * F7: Change the authenticated user's password.
-     * S6: Increments tokenVersion so all existing tokens are revoked.
+     * Change the authenticated user's password.
+     * Increments tokenVersion so all existing tokens are revoked.
      * Returns a new JWT issued with the new tokenVersion.
      */
     @Transactional
@@ -90,7 +90,7 @@ public class AuthService {
         }
 
         user.setPasswordHash(passwordEncoder.encode(request.getNewPassword()));
-        user.setTokenVersion(user.getTokenVersion() + 1);  // S6: revoke all existing tokens
+        user.setTokenVersion(user.getTokenVersion() + 1);  // revoke all existing tokens
         userRepository.save(user);
 
         log.info("Password changed for user: {}", userEmail);
@@ -99,7 +99,7 @@ public class AuthService {
     }
 
     /**
-     * S6: Explicit logout — increments tokenVersion to invalidate the current token.
+     * Explicit logout — increments tokenVersion to invalidate the current token.
      * The frontend should discard its stored JWT after calling this.
      */
     @Transactional

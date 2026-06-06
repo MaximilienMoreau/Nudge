@@ -31,13 +31,13 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private String passwordHash;
 
-    // Q5: use Hibernate @CreationTimestamp so DB clock (not JVM) is authoritative
+    // use Hibernate @CreationTimestamp so DB clock (not JVM) is authoritative
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     /**
-     * S6: Token version for JWT revocation.
+     * Token version for JWT revocation.
      * Increment this on password change or explicit logout.
      * Every JWT includes this value; tokens with a stale version are rejected.
      */

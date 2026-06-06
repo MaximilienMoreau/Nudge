@@ -1,7 +1,7 @@
 /**
  * config.js — Single source of truth for all frontend JS files.
  *
- * A1/A2: Centralise API_BASE and WS_URL here so there is exactly one place
+ * Centralise API_BASE and WS_URL here so there is exactly one place
  * to update when the backend URL changes (dev → staging → prod).
  *
  * Load this script FIRST in every HTML page:

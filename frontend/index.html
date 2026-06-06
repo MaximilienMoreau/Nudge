@@ -6,7 +6,7 @@
   <title>Nudge — Sign In</title>
   <script>if(localStorage.getItem('nudge_theme')==='light')document.documentElement.setAttribute('data-theme','light');</script>
   <link rel="stylesheet" href="css/style.css"/>
-  <!-- U9: Password strength indicator styles -->
+  <!-- Password strength indicator styles -->
   <style>
     #pw-strength {
       font-size: .78rem;
@@ -58,7 +58,7 @@
       </div>
       <div class="form-group">
         <label>Password</label>
-        <!-- U9: minlength + live strength indicator -->
+        <!-- minlength + live strength indicator -->
         <input type="password" id="reg-password" placeholder="Min. 8 chars, mix of letters + numbers" minlength="8" required/>
         <div id="pw-strength"></div>
       </div>
@@ -67,7 +67,7 @@
     </form>
   </div>
 
-  <!-- A2: config.js first so auth.js can use NUDGE_CONFIG.API_BASE -->
+  <!-- config.js first so auth.js can use NUDGE_CONFIG.API_BASE -->
   <script src="js/config.js"></script>
   <script src="js/auth.js"></script>
 </body>

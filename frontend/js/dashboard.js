@@ -1,16 +1,16 @@
 /**
  * dashboard.js — Main dashboard logic
  *
- * A2:  Uses NUDGE_CONFIG.API_BASE from config.js (no hardcoded URL).
- * Q10: handleTrackEmail and handleModalTrack share submitTrackEmail().
- * U1:  "Copy HTML" button with one-click clipboard copy.
- * U2:  alert() replaced everywhere with showToast().
- * U3:  Client-side search + sortable columns on the email table.
- * U4:  Score bar has a tooltip explaining the scoring factors.
- * U5:  "Pro Plan" sidebar text shows the account creation date instead.
- * U7:  Follow-up modal cannot be closed while generation is in progress.
- * U8:  Warning banner shown when the AI response is the fallback placeholder.
- * P1:  WebSocket notifications patch only the affected table row, no full reload.
+ *  Uses NUDGE_CONFIG.API_BASE from config.js (no hardcoded URL).
+ * handleTrackEmail and handleModalTrack share submitTrackEmail().
+ *  "Copy HTML" button with one-click clipboard copy.
+ *  alert() replaced everywhere with showToast().
+ *  Client-side search + sortable columns on the email table.
+ *  Score bar has a tooltip explaining the scoring factors.
+ *  "Pro Plan" sidebar text shows the account creation date instead.
+ *  Follow-up modal cannot be closed while generation is in progress.
+ *  Warning banner shown when the AI response is the fallback placeholder.
+ *  WebSocket notifications patch only the affected table row, no full reload.
  */
 
 // ── Auth guard ────────────────────────────────────────────────
@@ -20,13 +20,19 @@ const userEmail = localStorage.getItem('nudge_email');
 // Token is in an httpOnly cookie — redirect if email not present (not logged in)
 if (!userEmail) window.location.href = 'index.html';
 
+// ── Constants ─────────────────────────────────────────────
+
+const HOT_LEAD_THRESHOLD = 70;
+// Columns whose values are ISO date strings — sorted as strings, not numbers
+const DATE_SORT_COLS = new Set(['createdAt', 'lastOpenedAt', 'lastClickedAt', 'archivedAt']);
+
 // ── State ─────────────────────────────────────────────────────
 
 let allEmails    = [];       // all emails from the last load
 let filteredEmails = [];     // after search/filter
 let followUpEmail = null;    // context for AI modal
 let sortState     = { col: null, asc: true };
-let isGenerating  = false;   // U7: guard modal close during generation
+let isGenerating  = false;   // guard modal close during generation
 
 // ── Init ──────────────────────────────────────────────────────
 
@@ -39,7 +45,7 @@ document.addEventListener('DOMContentLoaded', () => {
     avatarEl.textContent = userEmail[0].toUpperCase();
   }
 
-  // U5: Show account creation date from localStorage (set after login)
+  // Show account creation date from localStorage (set after login)
   const createdAt = localStorage.getItem('nudge_createdAt');
   if (roleEl) {
     roleEl.textContent = createdAt
@@ -107,7 +113,7 @@ function renderPagination(current, total) {
   document.getElementById('emails-tbody').insertAdjacentHTML('afterend', html);
 }
 
-// ── U3: Search & filter ───────────────────────────────────────
+// ── Search & filter ───────────────────────────────────────
 
 function handleSearch(query) {
   const q = query.toLowerCase();
@@ -119,7 +125,7 @@ function handleSearch(query) {
   renderEmailTable(filteredEmails);
 }
 
-// ── U3: Sortable columns ──────────────────────────────────────
+// ── Sortable columns ──────────────────────────────────────
 
 function setupTableSorting() {
   document.querySelectorAll('th[data-sort]').forEach(th => {
@@ -145,8 +151,8 @@ function sortEmails() {
   if (!col) return;
   filteredEmails.sort((a, b) => {
     let va = a[col], vb = b[col];
-    if (va == null) va = col.includes('At') ? '' : -Infinity;
-    if (vb == null) vb = col.includes('At') ? '' : -Infinity;
+    if (va == null) va = DATE_SORT_COLS.has(col) ? '' : -Infinity;
+    if (vb == null) vb = DATE_SORT_COLS.has(col) ? '' : -Infinity;
     if (typeof va === 'string') return asc ? va.localeCompare(vb) : vb.localeCompare(va);
     return asc ? va - vb : vb - va;
   });
@@ -170,7 +176,7 @@ function renderEmailTable(emails) {
   }
 
   tbody.innerHTML = emails.map(email => {
-    const isHot     = email.leadScore >= 70;
+    const isHot     = email.leadScore >= HOT_LEAD_THRESHOLD;
     const hotBadge  = isHot ? ' 🔥' : '';
 
     return `
@@ -204,7 +210,7 @@ function renderEmailTable(emails) {
   }).join('');
 }
 
-// ── P1: Targeted row update from WebSocket ────────────────────
+// ── Targeted row update from WebSocket ────────────────────
 
 function updateEmailRow(updatedEmail) {
   // Update in-memory cache
@@ -217,7 +223,7 @@ function updateEmailRow(updatedEmail) {
   const row = document.querySelector(`tr[data-email-id="${updatedEmail.id}"]`);
   if (!row) { renderEmailTable(filteredEmails); return; }
 
-  const isHot = updatedEmail.leadScore >= 70;
+  const isHot = updatedEmail.leadScore >= HOT_LEAD_THRESHOLD;
   row.className = isHot ? 'hot-lead' : '';
   const cells = row.querySelectorAll('td');
   cells[3].innerHTML = statusBadge(updatedEmail.status);
@@ -232,7 +238,7 @@ function updateEmailRow(updatedEmail) {
 function updateStats(emails) {
   const total  = emails.length;
   const opened = emails.filter(e => e.openCount > 0).length;
-  const hot    = emails.filter(e => e.leadScore >= 70).length;
+  const hot    = emails.filter(e => e.leadScore >= HOT_LEAD_THRESHOLD).length;
   const avg    = total > 0
     ? Math.round(emails.reduce((s, e) => s + e.leadScore, 0) / total) : 0;
 
@@ -292,7 +298,7 @@ async function loadSendTime() {
   }
 }
 
-// ── Q10: Shared track-email helper ────────────────────────────
+// ── Shared track-email helper ────────────────────────────
 
 /**
  * Submits a track-email form. Used by both the standalone page and the modal.
@@ -327,7 +333,7 @@ async function handleTrackEmail(e) {
     showTrackResult(emailDto, 'track-result', 'pixel-url', 'pixel-html');
     document.getElementById('track-form').reset();
   } catch (err) {
-    showToast('Error', err.message, 'error');  // U2
+    showToast('Error', err.message, 'error');  
   } finally {
     btn.disabled = false;
     btn.textContent = 'Generate Tracking Pixel';
@@ -352,14 +358,14 @@ async function handleModalTrack(e) {
     document.getElementById('modal-track-form').reset();
     await loadEmails();
   } catch (err) {
-    showToast('Error', err.message, 'error');  // U2
+    showToast('Error', err.message, 'error');  
   } finally {
     btn.disabled = false;
     btn.textContent = 'Create Pixel';
   }
 }
 
-// ── U1: Show tracking result with Copy buttons ────────────────
+// ── Show tracking result with Copy buttons ────────────────
 
 function showTrackResult(data, resultId, urlId, htmlId) {
   const pixelUrl  = data.trackingPixelUrl;
@@ -369,14 +375,14 @@ function showTrackResult(data, resultId, urlId, htmlId) {
   document.getElementById(urlId).textContent   = pixelUrl;
   document.getElementById(htmlId).textContent  = htmlSnip;
 
-  // U1: Wire up copy buttons
+  // Wire up copy buttons
   const copyUrlBtn  = document.getElementById(urlId + '-copy');
   const copyHtmlBtn = document.getElementById(htmlId + '-copy');
   if (copyUrlBtn)  copyUrlBtn.onclick  = () => copyText(pixelUrl, 'Pixel URL copied!', copyUrlBtn);
   if (copyHtmlBtn) copyHtmlBtn.onclick = () => copyText(htmlSnip, 'HTML snippet copied!', copyHtmlBtn);
 }
 
-// ── F1: Archive email ─────────────────────────────────────────
+// ── Archive email ─────────────────────────────────────────
 
 async function archiveEmail(emailId) {
   try {
@@ -479,12 +485,12 @@ function openFollowUpModal(emailId) {
     </div>`;
 
   document.getElementById('followup-result').style.display = 'none';
-  document.getElementById('ai-fallback-warning').style.display = 'none';  // U8
+  document.getElementById('ai-fallback-warning').style.display = 'none';  
   document.getElementById('followup-modal').style.display = 'flex';
 }
 
 function closeFollowUpModal() {
-  if (isGenerating) return; // U7: prevent close during generation
+  if (isGenerating) return; // prevent close during generation
   document.getElementById('followup-modal').style.display = 'none';
   followUpEmail = null;
 }
@@ -493,7 +499,7 @@ async function generateFollowUp() {
   if (!followUpEmail || isGenerating) return;
 
   const btn = document.getElementById('gen-btn');
-  isGenerating = true;    // U7
+  isGenerating = true;    
   btn.disabled = true;
   btn.innerHTML = '<span class="spinner"></span> Generating…';
 
@@ -501,7 +507,7 @@ async function generateFollowUp() {
     (Date.now() - new Date(followUpEmail.createdAt)) / (1000 * 60 * 60 * 24)
   );
 
-  // S9: Only send emailId and daysSinceSent — server computes score and openCount
+  // Only send emailId and daysSinceSent — server computes score and openCount
   const payload = {
     emailId:       followUpEmail.id,
     daysSinceSent
@@ -516,14 +522,14 @@ async function generateFollowUp() {
     document.getElementById('followup-text').textContent    = data.followUpText;
     document.getElementById('followup-result').style.display = '';
 
-    // U8: Detect fallback placeholder text
+    // Detect fallback placeholder text
     const isFallback = data.followUpText.includes("I wanted to follow up on my previous email");
     document.getElementById('ai-fallback-warning').style.display = isFallback ? '' : 'none';
 
   } catch (err) {
-    showToast('Error', err.message, 'error');  // U2
+    showToast('Error', err.message, 'error');  
   } finally {
-    isGenerating = false;  // U7
+    isGenerating = false;  
     btn.disabled = false;
     btn.textContent = 'Generate Follow-Up';
   }
@@ -575,7 +581,7 @@ async function authFetch(path, options = {}) {
 }
 
 function logout() {
-  // S6: Invalidate token server-side
+  // Invalidate token server-side
   authFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
   localStorage.clear();
   window.location.href = 'index.html';
@@ -609,10 +615,10 @@ function statusBadge(status) {
 }
 
 /**
- * U4: Score bar now includes a tooltip explaining the scoring breakdown.
+ * Score bar now includes a tooltip explaining the scoring breakdown.
  */
 function scoreBar(score) {
-  const color   = score >= 70 ? '#f59e0b' : score >= 40 ? '#6366f1' : '#64748b';
+  const color   = score >= HOT_LEAD_THRESHOLD ? '#f59e0b' : score >= 40 ? '#6366f1' : '#64748b';
   const tooltip = 'Reply Probability Score (0–100). ' +
                   'Based on: open count (up to 40 pts), ' +
                   'recency of last open (up to 40 pts), ' +

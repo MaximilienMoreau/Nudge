@@ -29,7 +29,7 @@ import java.util.Map;
 /**
  * STOMP over WebSocket configuration.
  *
- * S3: Authentication at two levels:
+ * Authentication at two levels:
  *   1. HTTP handshake level: HandshakeInterceptor checks a ?token= query param
  *      before the WebSocket upgrade is granted.
  *   2. STOMP CONNECT level: ChannelInterceptor validates the JWT in the
@@ -67,7 +67,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
                 .setAllowedOriginPatterns(corsAllowedOrigins.split(","))
-                // S3: Validate the ?token= query param at HTTP handshake time
+                // Validate the ?token= query param at HTTP handshake time
                 .addInterceptors(new JwtHandshakeInterceptor(jwtUtil))
                 .withSockJS();
     }
@@ -110,7 +110,7 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
         });
     }
 
-    // ── S3: HTTP-level handshake interceptor ───────────────────
+    // ── HTTP-level handshake interceptor ───────────────────
 
     private static class JwtHandshakeInterceptor implements HandshakeInterceptor {
 

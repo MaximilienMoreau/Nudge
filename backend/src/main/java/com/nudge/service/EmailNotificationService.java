@@ -8,7 +8,7 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.stereotype.Service;
 
 /**
- * F5: Email notification fallback.
+ * Email notification fallback.
  *
  * Sends plain-text email notifications when:
  *   - A tracked email is opened (and the recipient has no active WebSocket session)

@@ -11,7 +11,7 @@ import java.time.LocalDateTime;
  * Represents an outgoing email that has been registered for tracking.
  * Each email gets a unique trackingId embedded in the tracking pixel URL.
  *
- * A7: Removed the bidirectional @OneToMany events collection — it was never
+ * Removed the bidirectional @OneToMany events collection — it was never
  * used (the service queries events directly via TrackingEventRepository) and
  * forced Hibernate to maintain an extra collection on every load.
  */
@@ -54,19 +54,19 @@ public class TrackedEmail {
     @Column(nullable = false, unique = true)
     private String trackingId;
 
-    // Q5: Hibernate sets this from the DB clock, not JVM time
+    // Hibernate sets this from the DB clock, not JVM time
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     /**
-     * F1: Soft-delete support.
+     * Soft-delete support.
      * null = active, non-null = archived at this timestamp.
      */
     private LocalDateTime archivedAt;
 
     /**
-     * F4: When the user has scheduled a follow-up reminder.
+     * When the user has scheduled a follow-up reminder.
      * null = no reminder scheduled.
      */
     private LocalDateTime scheduledFollowUpAt;

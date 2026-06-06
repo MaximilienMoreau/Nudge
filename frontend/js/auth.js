@@ -1,8 +1,8 @@
 /**
  * auth.js — Login / Register page logic
  *
- * A2: Uses NUDGE_CONFIG.API_BASE from config.js (no hardcoded URL).
- * U9: Client-side password strength validation with inline feedback.
+ * Uses NUDGE_CONFIG.API_BASE from config.js (no hardcoded URL).
+ * Client-side password strength validation with inline feedback.
  */
 
 // ── Tab switching ─────────────────────────────────────────────
@@ -58,7 +58,7 @@ async function handleRegister(e) {
   const errEl  = document.getElementById('reg-error');
   errEl.style.display = 'none';
 
-  // U9: Password strength check before sending to server
+  // Password strength check before sending to server
   const password = document.getElementById('reg-password').value;
   const strength = checkPasswordStrength(password);
   if (!strength.ok) {
@@ -94,7 +94,7 @@ async function handleRegister(e) {
   }
 }
 
-// ── U9: Password strength ─────────────────────────────────────
+// ── Password strength ─────────────────────────────────────
 
 /**
  * Returns { ok: boolean, message: string, score: 0-4 }.

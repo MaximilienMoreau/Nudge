@@ -17,9 +17,9 @@ import java.util.stream.Collectors;
 /**
  * General application bean definitions.
  *
- * Q2: RestTemplate exposed as a Spring bean with configured timeouts.
- * Q3: Reuse Spring's managed ObjectMapper (Jackson auto-configuration).
- * S4: Trusted proxy ranges parsed from configuration property.
+ * RestTemplate exposed as a Spring bean with configured timeouts.
+ * Reuse Spring's managed ObjectMapper (Jackson auto-configuration).
+ * Trusted proxy ranges parsed from configuration property.
  */
 @Configuration
 public class AppConfig {
@@ -28,7 +28,7 @@ public class AppConfig {
     private String trustedProxyRanges;
 
     /**
-     * Q2: Shared RestTemplate with explicit connection and read timeouts.
+     * Shared RestTemplate with explicit connection and read timeouts.
      * Injects into AIService instead of instantiating inline.
      */
     @Bean
@@ -40,7 +40,7 @@ public class AppConfig {
     }
 
     /**
-     * S4: Set of trusted proxy IP addresses / CIDR prefixes.
+     * Set of trusted proxy IP addresses / CIDR prefixes.
      * X-Forwarded-For is only trusted when the request arrives from these ranges.
      */
     @Bean("trustedProxySet")
@@ -52,7 +52,7 @@ public class AppConfig {
     }
 
     /**
-     * Q3: Expose the Spring-managed ObjectMapper as a named bean so services
+     * Expose the Spring-managed ObjectMapper as a named bean so services
      * can inject it instead of creating their own instances.
      * Jackson auto-configuration provides this bean; we just expose it here
      * for clarity / explicit injection.

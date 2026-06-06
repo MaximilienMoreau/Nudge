@@ -13,7 +13,7 @@ import org.springframework.web.bind.annotation.*;
 /**
  * AI-powered follow-up generation and send-time endpoints.
  *
- * S9: engagementScore and openCount are no longer supplied by the client.
+ * engagementScore and openCount are no longer supplied by the client.
  *     AIService fetches real values from the DB using emailId.
  */
 @RestController

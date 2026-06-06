@@ -29,12 +29,12 @@ import java.util.Map;
 /**
  * Generates AI-powered follow-up emails and send-time recommendations.
  *
- * Q2: RestTemplate injected as a Spring bean (no inline instantiation).
- * Q3: ObjectMapper injected as a Spring bean.
- * Q7: suggestSendTime uses a native SQL aggregation query rather than
+ * RestTemplate injected as a Spring bean (no inline instantiation).
+ * ObjectMapper injected as a Spring bean.
+ * suggestSendTime uses a native SQL aggregation query rather than
  *     loading all open events into JVM memory.
- * P5: Null check on choices[0] before accessing nested fields.
- * S9: generateFollowUp looks up real openCount/score from DB (see AIController).
+ * Null check on choices[0] before accessing nested fields.
+ * generateFollowUp looks up real openCount/score from DB (see AIController).
  */
 @Service
 public class AIService {
@@ -52,8 +52,8 @@ public class AIService {
     private final TrackedEmailRepository  emailRepo;
     private final LeadScoringService      leadScoringService;
     private final EncryptionService       encryptionService;
-    private final RestTemplate            restTemplate;   // Q2: injected bean
-    private final ObjectMapper            objectMapper;   // Q3: injected bean
+    private final RestTemplate            restTemplate;   // injected bean
+    private final ObjectMapper            objectMapper;   // injected bean
 
     public AIService(TrackingEventRepository eventRepo,
                      TrackedEmailRepository emailRepo,
@@ -72,14 +72,14 @@ public class AIService {
     /**
      * Generate a follow-up email.
      *
-     * S9: openCount and engagementScore are computed server-side from the DB
+     * openCount and engagementScore are computed server-side from the DB
      *     to prevent client-supplied value tampering.
      *
      * @param request  contains only emailId and daysSinceSent
      * @param ownerEmail  the authenticated user's email (for ownership check)
      */
     public FollowUpResponse generateFollowUp(FollowUpRequest request, String ownerEmail) {
-        // S9: Look up real engagement data from the database
+        // Look up real engagement data from the database
         TrackedEmail email = emailRepo.findById(request.getEmailId())
                 .orElseThrow(() -> new IllegalArgumentException("Email not found: " + request.getEmailId()));
 
@@ -91,7 +91,7 @@ public class AIService {
         int openCount       = (int) events.stream().filter(e -> e.getType() == EventType.OPEN).count();
         int engagementScore = leadScoringService.computeScore(events);
 
-        // S8: Decrypt content before sending to the AI
+        // Decrypt content before sending to the AI
         String decryptedContent = encryptionService.decrypt(email.getContent());
 
         // Build an enriched internal request
@@ -188,7 +188,7 @@ public class AIService {
     private FollowUpResponse parseResponse(String rawResponse, String originalSubject) throws Exception {
         JsonNode root = objectMapper.readTree(rawResponse);
 
-        // P5: null-safe access on choices[0]
+        // null-safe access on choices[0]
         JsonNode choices = root.path("choices");
         if (choices.isMissingNode() || !choices.isArray() || choices.isEmpty()) {
             log.warn("OpenAI response has no choices — falling back");
@@ -216,7 +216,7 @@ public class AIService {
     // ── Send-time optimization ─────────────────────────────────────────────────
 
     /**
-     * Q7: Analyse historical opens via a single SQL aggregation query
+     * Analyse historical opens via a single SQL aggregation query
      * (GROUP BY day, hour) instead of loading every event into JVM memory.
      */
     public SendTimeResponse suggestSendTime(String userEmail) {

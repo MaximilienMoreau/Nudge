@@ -3,7 +3,7 @@ package com.nudge.util;
 /**
  * Utility methods for IP address / CIDR range matching.
  *
- * S4: Used by both TrackingService and RateLimitFilter to decide whether to
+ * Used by both TrackingService and RateLimitFilter to decide whether to
  *     trust X-Forwarded-For. Centralised here so both use identical logic and
  *     neither can be trivially bypassed by IP spoofing.
  *

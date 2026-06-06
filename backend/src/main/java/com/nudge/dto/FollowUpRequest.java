@@ -6,7 +6,7 @@ import lombok.Data;
 /**
  * Input for AI follow-up generation.
  *
- * S9: engagementScore and openCount are no longer accepted from the client.
+ * engagementScore and openCount are no longer accepted from the client.
  *     The server recalculates them from the DB using emailId to prevent tampering.
  */
 @Data
