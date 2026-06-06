@@ -20,11 +20,7 @@ const userEmail = localStorage.getItem('nudge_email');
 // Token is in an httpOnly cookie — redirect if email not present (not logged in)
 if (!userEmail) window.location.href = 'index.html';
 
-// ── Constants ─────────────────────────────────────────────
 
-const HOT_LEAD_THRESHOLD = 70;
-// Columns whose values are ISO date strings — sorted as strings, not numbers
-const DATE_SORT_COLS = new Set(['createdAt', 'lastOpenedAt', 'lastClickedAt', 'archivedAt']);
 
 // ── State ─────────────────────────────────────────────────────
 
