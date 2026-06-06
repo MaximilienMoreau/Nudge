@@ -1,8 +1,8 @@
-# Nudge — AI-Powered Email Assistant
+# Nudge — AI-Powered Email Tracker
 
 > "Never get ghosted again. Know exactly when and how to follow up."
 
-Nudge helps you track email opens in real-time, score engagement, and generate AI-powered follow-ups.
+Nudge tracks email opens in real-time, scores engagement, and generates AI-powered follow-ups.
 
 ---
 
@@ -35,7 +35,6 @@ nudge/
 ### 1. Database
 
 ```bash
-# Start PostgreSQL and create the database
 psql -U postgres -c "CREATE DATABASE nudge;"
 ```
 
@@ -44,13 +43,12 @@ psql -U postgres -c "CREATE DATABASE nudge;"
 ```bash
 cd backend
 
-# Set your OpenAI key (optional — fallback works without it)
+# Optional — AI follow-ups require this; fallback text is used without it
 export OPENAI_API_KEY=sk-...
 
-# Edit credentials if needed
+# Edit DB credentials if needed
 nano src/main/resources/application.properties
 
-# Run
 mvn spring-boot:run
 ```
 
@@ -58,58 +56,80 @@ The API starts at `http://localhost:8080`.
 
 #### Key environment variables
 
-| Variable        | Default       | Description                       |
-|-----------------|---------------|-----------------------------------|
-| `OPENAI_API_KEY`| *(empty)*     | OpenAI key for AI follow-ups      |
-| DB URL          | `localhost/nudge` | See application.properties   |
-| JWT secret      | Base64 string | Change before going to production |
+| Variable         | Default           | Description                       |
+|------------------|-------------------|-----------------------------------|
+| `OPENAI_API_KEY` | *(empty)*         | OpenAI key for AI follow-ups      |
+| DB URL           | `localhost/nudge` | See `application.properties`      |
+| JWT secret       | Base64 string     | **Change before going to production** |
 
 ### 3. Frontend
 
 ```bash
 cd frontend
 
-# Option A: open directly in browser (simplest)
-open index.html          # macOS
+# Option A: open directly (simplest)
 xdg-open index.html      # Linux
+open index.html          # macOS
 
-# Option B: serve with any static server
+# Option B: static server
 npx serve .
 # or
 python3 -m http.server 3000
 ```
 
-Open `http://localhost:3000` (or the file directly).
-
 ### 4. Chrome Extension
 
 1. Open Chrome → `chrome://extensions/`
 2. Enable **Developer mode** (top right)
-3. Click **Load unpacked**
-4. Select the `/extension` folder
-5. The Nudge icon appears in your toolbar
-6. Click it and sign in with your Nudge account
+3. Click **Load unpacked** → select the `/extension` folder
+4. The Nudge icon appears in your toolbar — click it to sign in
 
 ---
 
 ## API Reference
 
+Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All protected endpoints read the cookie automatically — no `Authorization` header needed from the browser. API clients (e.g. the Chrome extension) may alternatively send `Authorization: Bearer <token>`.
+
 ### Authentication (public)
 
-| Method | Path                  | Body                          | Returns      |
-|--------|-----------------------|-------------------------------|--------------|
-| POST   | `/api/auth/register`  | `{ email, password }`         | `AuthResponse` |
-| POST   | `/api/auth/login`     | `{ email, password }`         | `AuthResponse` |
+| Method | Path                   | Description                                      |
+|--------|------------------------|--------------------------------------------------|
+| POST   | `/api/auth/register`   | Create a new account                             |
+| POST   | `/api/auth/login`      | Exchange credentials for a JWT                   |
+| PUT    | `/api/auth/password`   | Change password (requires JWT) — returns new JWT |
+| POST   | `/api/auth/logout`     | Revoke current token server-side (requires JWT)  |
 
-`AuthResponse`: `{ token, email, userId }`
+**POST `/api/auth/register` and `/api/auth/login` body:**
+```json
+{ "email": "you@example.com", "password": "secret" }
+```
 
-### Emails (requires `Authorization: Bearer <token>`)
+**Response (`AuthResponse`):**
+```json
+{
+  "token": "eyJ...",
+  "email": "you@example.com",
+  "userId": 1,
+  "createdAt": "2026-01-01T12:00:00"
+}
+```
 
-| Method | Path              | Description                          |
-|--------|-------------------|--------------------------------------|
-| GET    | `/api/emails`     | List all tracked emails for the user |
-| POST   | `/api/emails`     | Register new email for tracking      |
-| GET    | `/api/emails/{id}`| Get single email with stats          |
+---
+
+### Emails (requires JWT)
+
+| Method | Path                         | Description                                    |
+|--------|------------------------------|------------------------------------------------|
+| GET    | `/api/emails`                | List active tracked emails (paginated)         |
+| POST   | `/api/emails`                | Register a new email for tracking              |
+| GET    | `/api/emails/{id}`           | Get a single email with full stats             |
+| DELETE | `/api/emails/{id}`           | Soft-delete (archive) an email                 |
+| GET    | `/api/emails/archived`       | List archived emails                           |
+| POST   | `/api/emails/{id}/restore`   | Restore an archived email                      |
+| DELETE | `/api/emails/{id}/permanent` | Permanently delete an email and all its events |
+| POST   | `/api/emails/{id}/schedule`  | Schedule a follow-up reminder                  |
+
+**GET `/api/emails` query params:** `?page=0&size=50`
 
 **POST `/api/emails` body:**
 ```json
@@ -120,59 +140,126 @@ Open `http://localhost:3000` (or the file directly).
 }
 ```
 
-**Response includes:**
+For multiple recipients, use `recipientEmails` instead (one `TrackedEmail` per recipient, each with its own `trackingId`):
 ```json
 {
-  "trackingPixelUrl": "http://localhost:8080/track/open/{uuid}",
-  "leadScore": 75,
-  "status": "Opened Multiple Times",
-  "openCount": 3
+  "subject": "Product demo",
+  "recipientEmails": ["alice@co.com", "bob@co.com"],
+  "content": "Hi, here is the link..."
 }
 ```
 
-### Tracking (public — called by email clients)
+**POST `/api/emails/{id}/schedule` body:**
+```json
+{ "scheduledAt": "2026-04-20T09:00:00" }
+```
 
-| Method | Path                     | Description                            |
-|--------|--------------------------|----------------------------------------|
-| GET    | `/track/open/{trackingId}` | Returns 1×1 GIF, logs open event     |
+**Email response (`EmailDTO`):**
+```json
+{
+  "id": 42,
+  "subject": "Follow up on our meeting",
+  "recipientEmail": "john@company.com",
+  "trackingPixelUrl": "http://localhost:8080/track/open/{uuid}",
+  "clickTrackingBaseUrl": "http://localhost:8080/track/click/{uuid}",
+  "leadScore": 75,
+  "status": "Opened Multiple Times",
+  "openCount": 3,
+  "clickCount": 1,
+  "createdAt": "2026-01-01T12:00:00",
+  "lastOpenedAt": "2026-01-02T09:00:00",
+  "lastClickedAt": "2026-01-02T09:01:00"
+}
+```
 
-### AI Follow-Up
+---
 
-| Method | Path              | Description                |
-|--------|-------------------|----------------------------|
-| POST   | `/api/ai/followup`| Generate AI follow-up text |
+### Tracking (public — called automatically by email clients)
 
-**Request body:**
+| Method | Path                              | Description                                    |
+|--------|-----------------------------------|------------------------------------------------|
+| GET    | `/track/open/{trackingId}`        | Returns 1×1 GIF and logs an OPEN event         |
+| GET    | `/track/click/{trackingId}?url=`  | Logs a CLICK event and 302-redirects to `url`  |
+
+Embed in emails:
+```html
+<!-- Tracking pixel (invisible) -->
+<img src="http://localhost:8080/track/open/{trackingId}" width="1" height="1" style="display:none" alt=""/>
+
+<!-- Tracked link -->
+<a href="http://localhost:8080/track/click/{trackingId}?url=https%3A%2F%2Fyour-link.com">Click here</a>
+```
+
+---
+
+### AI (requires JWT)
+
+| Method | Path                  | Description                                         |
+|--------|-----------------------|-----------------------------------------------------|
+| POST   | `/api/ai/followup`    | Generate an AI follow-up email                      |
+| POST   | `/api/ai/send-time`   | Suggest the best day and hour to send based on history |
+
+**POST `/api/ai/followup` body:**
 ```json
 {
   "emailId": 42,
-  "subject": "Partnership Proposal",
-  "originalContent": "Hi...",
-  "recipientEmail": "ceo@bigcorp.com",
-  "engagementScore": 85,
-  "openCount": 4,
   "daysSinceSent": 3
 }
 ```
 
+`openCount` and `engagementScore` are computed server-side from the database — do not pass them.
+
+**Response:**
+```json
+{
+  "suggestedSubject": "Re: Follow up on our meeting",
+  "followUpText": "Hi John, I wanted to circle back..."
+}
+```
+
+**POST `/api/ai/send-time`** — no body required.
+
+**Response:**
+```json
+{
+  "hasData": true,
+  "bestDay": "Tuesday",
+  "bestHour": "10:00",
+  "suggestion": "Send on Tuesday morning",
+  "rationale": "Based on 12 opens across your tracked emails"
+}
+```
+
+---
+
 ### WebSocket
 
-Connect to `ws://localhost:8080/ws` using STOMP + SockJS.
+Connect to `ws://localhost:8080/ws` using SockJS + STOMP.
 
-Send JWT in CONNECT frame header: `Authorization: Bearer <token>`
+The server authenticates via the `nudge_jwt` httpOnly cookie sent automatically by the browser on the SockJS handshake — no explicit token parameter is needed.
 
 Subscribe to: `/user/queue/notifications`
 
-**Notification payload:**
+**Notification payload (EMAIL_OPENED / EMAIL_CLICKED):**
 ```json
 {
   "type": "EMAIL_OPENED",
   "emailId": 42,
-  "subject": "Partnership Proposal",
-  "recipientEmail": "ceo@bigcorp.com",
+  "subject": "Follow up on our meeting",
+  "recipientEmail": "john@company.com",
   "openCount": 2,
   "leadScore": 65,
-  "timestamp": "2025-01-15T10:30:00"
+  "timestamp": "2026-01-15T10:30:00"
+}
+```
+
+**Notification payload (FOLLOW_UP_REMINDER):**
+```json
+{
+  "type": "FOLLOW_UP_REMINDER",
+  "emailId": 42,
+  "subject": "Follow up on our meeting",
+  "recipientEmail": "john@company.com"
 }
 ```
 
@@ -182,16 +269,18 @@ Subscribe to: `/user/queue/notifications`
 
 The Reply Probability Score (0–100) is computed from:
 
-| Signal           | Points       |
-|------------------|--------------|
-| Opens volume     | 15 per open, max 40 |
-| Recency (< 1h)   | 40           |
-| Recency (< 1d)   | 30           |
-| Recency (< 3d)   | 20           |
-| Recency (< 7d)   | 10           |
-| Frequency (> 5x) | 20           |
-| Frequency (> 3x) | 15           |
-| Frequency (> 1x) | 10           |
+| Signal              | Points              |
+|---------------------|---------------------|
+| Opens volume        | 15 per open, max 40 |
+| Recency (< 1 hour)  | 40                  |
+| Recency (< 1 day)   | 30                  |
+| Recency (< 3 days)  | 20                  |
+| Recency (< 7 days)  | 10                  |
+| Frequency (> 5×)    | 20                  |
+| Frequency (> 3×)    | 15                  |
+| Frequency (> 1×)    | 10                  |
+| Click (≥ 2 clicks)  | 20                  |
+| Click (≥ 1 click)   | 10                  |
 
 Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 
@@ -199,7 +288,7 @@ Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 
 ## Chrome Extension Usage
 
-1. Sign in via the popup using your Nudge account credentials
+1. Sign in via the popup with your Nudge account credentials
 2. Open Gmail and compose a new email
 3. A **"📨 Nudge: ON"** button appears next to the Send button
 4. Click Send — Nudge automatically registers the email and injects the tracking pixel
@@ -216,7 +305,7 @@ Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 - [ ] Update `app.base.url` to your production domain
 - [ ] Set `OPENAI_API_KEY` environment variable
 - [ ] Configure CORS `allowedOriginPatterns` to your specific frontend domain
-- [ ] Add rate limiting on `/track/open/**` to prevent pixel spam
+- [ ] Replace in-memory rate limiter with Redis + Bucket4j for multi-instance deployments
 
 ---
 
