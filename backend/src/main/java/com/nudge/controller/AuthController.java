@@ -80,7 +80,7 @@ public class AuthController {
     }
 
     private void setAuthCookie(HttpServletResponse response, String token) {
-        ResponseCookie cookie = ResponseCookie.from("nudge_jwt", token)
+        ResponseCookie cookie = ResponseCookie.from(com.nudge.security.SecurityConstants.JWT_COOKIE_NAME, token)
                 .httpOnly(true)
                 .sameSite("Strict")
                 .path("/")
@@ -90,7 +90,7 @@ public class AuthController {
     }
 
     private void clearAuthCookie(HttpServletResponse response) {
-        ResponseCookie cookie = ResponseCookie.from("nudge_jwt", "")
+        ResponseCookie cookie = ResponseCookie.from(com.nudge.security.SecurityConstants.JWT_COOKIE_NAME, "")
                 .httpOnly(true)
                 .sameSite("Strict")
                 .path("/")

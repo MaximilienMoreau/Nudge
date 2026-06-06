@@ -13,7 +13,6 @@
 let stompClient   = null;
 let retryDelay    = 5000;   // starts at 5s
 const MAX_DELAY   = 60000;
-const HOT_LEAD_THRESHOLD = 70;
 
 function connectWebSocket() {
   // Token is in an httpOnly cookie — no need to pass it explicitly.

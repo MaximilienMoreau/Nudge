@@ -82,7 +82,7 @@ public class JwtAuthFilter extends OncePerRequestFilter {
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
-                if ("nudge_jwt".equals(cookie.getName())) {
+                if (SecurityConstants.JWT_COOKIE_NAME.equals(cookie.getName())) {
                     return cookie.getValue();
                 }
             }

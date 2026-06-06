@@ -1,4 +1,4 @@
-# Nudge — Email Open Tracker
+# Nudge: Email Open Tracker
 
 > Get alerted the moment someone opens your email — no reply needed.
 

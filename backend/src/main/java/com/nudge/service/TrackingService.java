@@ -94,7 +94,7 @@ public class TrackingService {
             eventRepo.save(event);
 
             if (isBot) {
-                log.debug("Bot open recorded (not scored) for email='{}' trackingId={}",
+                log.info("Bot open filtered (not scored) for email='{}' trackingId={}",
                         email.getSubject(), trackingId);
                 return true;
             }

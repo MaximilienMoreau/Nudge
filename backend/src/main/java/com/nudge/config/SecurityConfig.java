@@ -22,7 +22,6 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
-import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -81,7 +80,7 @@ public class SecurityConfig {
 
         // Credentials (httpOnly cookie) require explicit origins — wildcards are forbidden by spec.
         // setAllowedOriginPatterns supports wildcards AND works with allowCredentials(true).
-        List<String> origins = Arrays.asList(corsAllowedOrigins.split(","));
+        List<String> origins = List.of(corsAllowedOrigins.split(","));
         config.setAllowedOriginPatterns(origins);
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));
