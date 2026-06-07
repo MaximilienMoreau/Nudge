@@ -148,25 +148,39 @@ public class AIService {
 
     private String buildUserPrompt(InternalFollowUpContext ctx) {
         return String.format("""
-                Write a follow-up email for the following situation:
+                Write a follow-up email for the following situation.
 
-                Original subject: %s
-                Original email content: %s
-                Recipient: %s
-                Days since sent: %d
-                Number of times email was opened: %d
-                Engagement score (0-100): %d
-                %s
+                <original_subject>%s</original_subject>
+                <original_content>%s</original_content>
+                <recipient>%s</recipient>
+                <days_since_sent>%d</days_since_sent>
+                <open_count>%d</open_count>
+                <engagement_score>%d</engagement_score>
+                <context>%s</context>
 
                 Return ONLY valid JSON with fields "followUpText" and "suggestedSubject".""",
-                ctx.subject,
-                ctx.content != null ? ctx.content : "(no content provided)",
-                ctx.recipientEmail != null ? ctx.recipientEmail : "the recipient",
+                sanitizeForPrompt(ctx.subject, 200),
+                sanitizeForPrompt(ctx.content != null ? ctx.content : "", 2000),
+                sanitizeForPrompt(ctx.recipientEmail != null ? ctx.recipientEmail : "the recipient", 200),
                 ctx.daysSinceSent,
                 ctx.openCount,
                 ctx.engagementScore,
                 buildEngagementContext(ctx)
         );
+    }
+
+    /**
+     * Sanitizes user-supplied text before embedding it in an LLM prompt.
+     * Truncates to maxLength, then escapes XML angle brackets so the value
+     * cannot break out of its enclosing XML delimiter tags.
+     */
+    private static String sanitizeForPrompt(String input, int maxLength) {
+        if (input == null || input.isBlank()) return "";
+        String trimmed = input.strip();
+        String truncated = trimmed.length() > maxLength
+                ? trimmed.substring(0, maxLength) + "…"
+                : trimmed;
+        return truncated.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
     }
 
     private String buildEngagementContext(InternalFollowUpContext ctx) {
