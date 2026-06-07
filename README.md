@@ -296,6 +296,7 @@ Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 - [ ] Configure a real database with proper credentials
 - [ ] Use HTTPS — tracking pixels won't load over HTTP in many email clients
 - [ ] Update `app.base.url` to your production domain
+- [ ] Update `API_BASE` in `frontend/js/config.js` to point to your production backend URL
 - [ ] Set `OPENAI_API_KEY` environment variable
 - [ ] Configure CORS `allowedOriginPatterns` to your specific frontend domain
 - [ ] Replace in-memory rate limiter with Redis + Bucket4j for multi-instance deployments
