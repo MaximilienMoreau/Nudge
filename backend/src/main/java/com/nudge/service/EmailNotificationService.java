@@ -30,6 +30,9 @@ public class EmailNotificationService {
     @Value("${nudge.notifications.email.from:noreply@nudge.app}")
     private String fromAddress;
 
+    @Value("${app.base.url:http://localhost:8080}")
+    private String appBaseUrl;
+
     public EmailNotificationService(JavaMailSender mailSender) {
         this.mailSender = mailSender;
     }
@@ -42,7 +45,7 @@ public class EmailNotificationService {
             "📬 Your email was opened — Nudge",
             String.format(
                 "Good news!\n\nYour email \"%s\" was just opened by %s.\n\n" +
-                "Log in to Nudge to view the full engagement details and generate a follow-up.\n\nhttps://nudge.app/dashboard",
+                "Log in to Nudge to view the full engagement details and generate a follow-up.\n\n" + appBaseUrl + "/dashboard.html",
                 emailSubject, recipientEmail
             )
         );
@@ -56,7 +59,7 @@ public class EmailNotificationService {
             "⏰ Follow-up reminder — Nudge",
             String.format(
                 "This is your follow-up reminder for the email \"%s\" sent to %s.\n\n" +
-                "Log in to Nudge to generate an AI-powered follow-up message:\nhttps://nudge.app/dashboard",
+                "Log in to Nudge to generate an AI-powered follow-up message:\n" + appBaseUrl + "/dashboard.html",
                 emailSubject, recipientEmail
             )
         );

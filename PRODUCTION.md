@@ -12,14 +12,20 @@ docker compose up -d
 
 ## Browser Extension: Production Configuration (Chrome & Edge)
 
-The extension's `background.js` and `popup.js` both use `API_BASE`.
-Before publishing to the Chrome Web Store or Edge Add-ons store, update this value:
+The extension reads the backend URL from `chrome.storage.local` (`nudge_api_base`), with a
+hardcoded fallback (`DEFAULT_API_BASE`) used only when no value has been saved yet.
 
+**Option A — configure via the popup (no code change needed):**
+Open the extension popup → enter your production URL in the server field → click **Save**.
+The value is stored in `chrome.storage.local` and overrides the default on every request.
+
+**Option B — change the default before building:**
 1. Open [extension/background.js](extension/background.js) and change:
    ```js
-   const API_BASE = 'https://api.your-domain.com';
+   const DEFAULT_API_BASE = 'https://api.your-domain.com';
    ```
-2. Open [extension/popup.js](extension/popup.js) and apply the same change.
+2. Open [extension/popup.js](extension/popup.js) and apply the same change to `DEFAULT_API`.
+
 3. Update `host_permissions` in your `manifest.json` to match:
    ```json
    "host_permissions": ["https://api.your-domain.com/*"]

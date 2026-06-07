@@ -198,6 +198,8 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
 | GET    | `/track/open/{trackingId}`        | Returns 1×1 GIF and logs an OPEN event         |
 | GET    | `/track/click/{trackingId}?url=`  | Logs a CLICK event and 302-redirects to `url`  |
 
+> **`url` must use `http` or `https`.** Any other scheme (`javascript:`, `data:`, `file:`, etc.) or a missing `url` parameter returns `400 Bad Request`. Always URL-encode the destination before appending it.
+
 Embed in emails:
 ```html
 <!-- Tracking pixel (invisible) -->
