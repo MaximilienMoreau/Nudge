@@ -76,7 +76,7 @@ async function login() {
 
     if (!res.ok) { showError(data.error || 'Login failed'); return; }
 
-    await chrome.storage.local.set({ nudge_token: data.token, nudge_email: data.email });
+    await chrome.storage.session.set({ nudge_token: data.token, nudge_email: data.email });
     showLoggedInView(data.email);
   } catch {
     showError('Cannot reach Nudge backend. Is it running?');

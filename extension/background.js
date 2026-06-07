@@ -5,7 +5,7 @@
  *  - Register a new email with the Nudge backend (REGISTER_EMAIL)
  *  - Return an AI send-time suggestion (GET_SEND_TIME)
  *  - Report the active tab's platform support (GET_PLATFORM_STATUS)
- *  - Persist auth token via chrome.storage.local
+ *  - Persist auth token via chrome.storage.session (token/email) and chrome.storage.local (API base URL)
  */
 
 const DEFAULT_API_BASE = 'http://localhost:8080';
@@ -54,7 +54,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
 
     case 'LOGOUT':
-      chrome.storage.local.remove(['nudge_token', 'nudge_email'], () =>
+      chrome.storage.session.remove(['nudge_token', 'nudge_email'], () =>
         sendResponse({ ok: true })
       );
       return true;
@@ -149,7 +149,7 @@ async function getAuthStatus() {
 
 function getStoredCredentials() {
   return new Promise(resolve => {
-    chrome.storage.local.get(['nudge_token', 'nudge_email'], result => {
+    chrome.storage.session.get(['nudge_token', 'nudge_email'], result => {
       resolve({ token: result.nudge_token, email: result.nudge_email });
     });
   });

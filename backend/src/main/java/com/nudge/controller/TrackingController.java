@@ -11,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.net.URI;
+import java.util.Locale;
 
 /**
  * Public tracking endpoints — no auth required.
@@ -37,6 +38,8 @@ public class TrackingController {
         0x02, 0x02, 0x44, 0x01, 0x00,
         0x3B
     };
+
+    private static final int MAX_REDIRECT_URL_LENGTH = 2048;
 
     private final TrackingService trackingService;
 
@@ -72,6 +75,9 @@ public class TrackingController {
      *
      * Records a CLICK event and 302-redirects to the original URL.
      * Embed links in emails as: /track/click/{trackingId}?url=<encoded original URL>
+     *
+     * Only http:// and https:// schemes are allowed to prevent open redirect abuse
+     * (javascript:, data:, file:, etc. are rejected with 400).
      */
     @GetMapping("/click/{trackingId}")
     public ResponseEntity<Void> trackClick(@PathVariable String trackingId,
@@ -82,15 +88,33 @@ public class TrackingController {
             log.warn("Unknown tracking ID (click): {}", trackingId);
         }
 
-        // Always redirect — even on unknown ID — to not break the link for the recipient
-        String destination = (url != null && !url.isBlank()) ? url : "about:blank";
-        HttpHeaders headers = new HttpHeaders();
-        try {
-            headers.setLocation(URI.create(destination));
-        } catch (IllegalArgumentException e) {
-            log.warn("Invalid redirect URL '{}', using blank", destination);
-            headers.setLocation(URI.create("about:blank"));
+        String destination = resolveDestination(url);
+        if (destination == null) {
+            log.warn("Rejected redirect for tracking ID {}: missing or unsafe URL", trackingId);
+            return ResponseEntity.badRequest().build();
         }
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setLocation(URI.create(destination));
         return new ResponseEntity<>(headers, HttpStatus.FOUND);
+    }
+
+    /**
+     * Validates and returns the redirect destination, or null if rejected.
+     * Only http and https schemes are permitted; the URL must also be syntactically valid.
+     */
+    private static String resolveDestination(String url) {
+        if (url == null || url.isBlank()) return null;
+        if (url.length() > MAX_REDIRECT_URL_LENGTH) return null;
+
+        String lower = url.toLowerCase(Locale.ROOT);
+        if (!lower.startsWith("http://") && !lower.startsWith("https://")) return null;
+
+        try {
+            URI.create(url);
+            return url;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
     }
 }
