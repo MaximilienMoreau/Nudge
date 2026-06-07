@@ -56,26 +56,31 @@ public class FollowUpSchedulerService {
                     continue; // Not due yet
                 }
 
-                String ownerEmail = email.getUser().getEmail();
-                log.info("Follow-up reminder due for email '{}' (owner: {})", email.getSubject(), ownerEmail);
+                try {
+                    String ownerEmail = email.getUser().getEmail();
+                    log.info("Follow-up reminder due for email '{}' (owner: {})", email.getSubject(), ownerEmail);
 
-                // Push real-time WebSocket notification
-                com.nudge.dto.NotificationDTO notification = new com.nudge.dto.NotificationDTO(
-                        "FOLLOW_UP_REMINDER",
-                        email.getId(),
-                        email.getSubject(),
-                        email.getRecipientEmail(),
-                        0, 0,
-                        now
-                );
-                notificationService.notifyUser(ownerEmail, notification);
+                    // Push real-time WebSocket notification
+                    com.nudge.dto.NotificationDTO notification = new com.nudge.dto.NotificationDTO(
+                            "FOLLOW_UP_REMINDER",
+                            email.getId(),
+                            email.getSubject(),
+                            email.getRecipientEmail(),
+                            0, 0,
+                            now
+                    );
+                    notificationService.notifyUser(ownerEmail, notification);
 
-                // Also send an email notification as fallback
-                emailNotificationService.sendFollowUpReminder(ownerEmail, email.getSubject(), email.getRecipientEmail());
+                    // Also send an email notification as fallback
+                    emailNotificationService.sendFollowUpReminder(ownerEmail, email.getSubject(), email.getRecipientEmail());
 
-                // Clear the reminder so it fires only once
-                email.setScheduledFollowUpAt(null);
-                emailRepo.save(email);
+                    // Clear the reminder so it fires only once
+                    email.setScheduledFollowUpAt(null);
+                    emailRepo.save(email);
+                } catch (Exception e) {
+                    log.error("Failed to process follow-up reminder for email id={}: {}", email.getId(), e.getMessage());
+                    // Continue to the next email — do not clear scheduledFollowUpAt so the next run retries
+                }
             }
         } while (slice.hasNext());
     }
