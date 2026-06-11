@@ -23,8 +23,10 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Populate server URL field
   document.getElementById('server-url').value = apiBase;
 
-  // Wire up dynamic dashboard link
-  document.getElementById('dashboard-link').href = `${apiBase}/dashboard.html`;
+  // Wire up dynamic dashboard links
+  const dashUrl = `${apiBase}/dashboard.html`;
+  document.getElementById('dashboard-link').href = dashUrl;
+  document.getElementById('dashboard-link-track').href = dashUrl;
 
   await Promise.all([
     checkAuthStatus(),
@@ -36,7 +38,9 @@ async function saveServerUrl() {
   const val = document.getElementById('server-url').value.trim().replace(/\/$/, '');
   if (!val.startsWith('http')) return;
   await chrome.storage.local.set({ nudge_api_base: val });
-  document.getElementById('dashboard-link').href = `${val}/dashboard.html`;
+  const dashUrl = `${val}/dashboard.html`;
+  document.getElementById('dashboard-link').href = dashUrl;
+  document.getElementById('dashboard-link-track').href = dashUrl;
   const btn = document.querySelector('[onclick="saveServerUrl()"]');
   btn.textContent = '✓';
   setTimeout(() => { btn.textContent = 'Save'; }, 1500);
@@ -121,12 +125,14 @@ function showLoggedInView(email) {
   document.getElementById('login-view').classList.add('hidden');
   document.getElementById('logged-view').classList.remove('hidden');
   document.getElementById('user-email-display').textContent = email;
-  setStatus(true, 'Connected — tracking active');
+  document.getElementById('sidebar-logout-btn').style.display = '';
+  setStatus(true, 'Connected');
 }
 
 function showLoginView() {
   document.getElementById('login-view').classList.remove('hidden');
   document.getElementById('logged-view').classList.add('hidden');
+  document.getElementById('sidebar-logout-btn').style.display = 'none';
   setStatus(false, 'Not signed in');
 }
 

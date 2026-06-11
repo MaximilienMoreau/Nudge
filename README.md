@@ -42,6 +42,17 @@ nudge/
 psql -U postgres -c "CREATE DATABASE nudge;"
 ```
 
+The `dev` profile connects to `localhost:5432/nudge` with username `postgres` and password `password`.
+If your local PostgreSQL uses different credentials, override them before running:
+
+```bash
+DB_PASSWORD=yourpassword mvn spring-boot:run
+# or
+DB_USERNAME=youruser DB_PASSWORD=yourpassword mvn spring-boot:run
+```
+
+Hibernate creates the schema automatically on first start (`JPA_DDL_AUTO=update`) — no migration scripts to run.
+
 ### 2. Backend
 
 ```bash
@@ -50,13 +61,14 @@ cd backend
 # Optional — AI follow-ups require this; fallback text is used without it
 export OPENAI_API_KEY=sk-...
 
-# Edit DB credentials if needed
-nano src/main/resources/application.properties
-
 mvn spring-boot:run
 ```
 
-The API starts at `http://localhost:8080`.
+The `dev` profile is active by default (`mvn spring-boot:run`). It supplies all required secrets
+(`JWT_SECRET`, `ENCRYPTION_KEY`) and sets `JPA_DDL_AUTO=update` so Hibernate creates the schema
+automatically — no manual configuration needed for local development.
+
+The API and the frontend both start at `http://localhost:8080`.
 
 #### Key environment variables
 
@@ -68,15 +80,21 @@ The API starts at `http://localhost:8080`.
 
 ### 3. Frontend
 
+The dashboard is served directly by Spring Boot at `http://localhost:8080` — no separate server
+needed. Open that URL in your browser after starting the backend.
+
+If you prefer a dedicated static server (e.g. for hot-reload during UI development), run it on
+any port and access via `http://localhost:<port>`. Cross-origin requests to the backend are
+supported via CORS.
+
 ```bash
 cd frontend
 
-# Option A: open directly (simplest)
-xdg-open index.html      # Linux
-open index.html          # macOS
+# Option A: served by the backend (recommended — no cross-origin setup needed)
+# Just open http://localhost:8080 after starting the backend.
 
-# Option B: static server
-npx serve .
+# Option B: standalone static server
+npx serve .              # defaults to port 3000
 # or
 python3 -m http.server 3000
 ```

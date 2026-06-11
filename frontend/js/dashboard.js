@@ -572,7 +572,12 @@ async function authFetch(path, options = {}) {
       ...(options.headers || {})
     }
   });
-  if (res.status === 401) { window.location.href = 'index.html'; }
+  if (res.status === 401) {
+    localStorage.removeItem('nudge_email');
+    localStorage.removeItem('nudge_userId');
+    localStorage.removeItem('nudge_createdAt');
+    window.location.href = 'index.html';
+  }
   return res;
 }
 
