@@ -27,6 +27,7 @@ async function handleLogin(e) {
   try {
     const res = await fetch(`${NUDGE_CONFIG.API_BASE}/api/auth/login`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email:    document.getElementById('login-email').value.trim(),
@@ -71,6 +72,7 @@ async function handleRegister(e) {
   try {
     const res = await fetch(`${NUDGE_CONFIG.API_BASE}/api/auth/register`, {
       method: 'POST',
+      credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         email:    document.getElementById('reg-email').value.trim(),

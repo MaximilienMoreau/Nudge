@@ -5,8 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>Nudge — Dashboard</title>
   <script>if(localStorage.getItem('nudge_theme')==='light')document.documentElement.setAttribute('data-theme','light');</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link rel="stylesheet" href="css/style.css"/>
-  <!-- Score tooltip style -->
   <style>
     .score-wrap   { display:flex;align-items:center;gap:.35rem;cursor:help }
     .score-help   { font-size:.65rem;color:var(--muted);border:1px solid currentColor;
@@ -28,22 +29,48 @@
   <!-- ── Sidebar ──────────────────────────────────────────── -->
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-logo">
-      <div class="logo-icon">📨</div>
+      <div class="logo-icon">
+        <!-- mail-check icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h9"/>
+          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+          <path d="m16 19 2 2 4-4"/>
+        </svg>
+      </div>
       <span>Nudge</span>
     </div>
 
     <nav class="sidebar-nav">
       <div class="nav-item active" onclick="showView('emails');closeSidebar()">
-        <span>📊</span> Dashboard
+        <!-- layout-dashboard -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/>
+          <rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/>
+        </svg>
+        Dashboard
       </div>
       <div class="nav-item" onclick="showView('track');closeSidebar()">
-        <span>➕</span> Track Email
+        <!-- plus-circle -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/>
+        </svg>
+        Track Email
       </div>
       <div class="nav-item" onclick="showView('insights');closeSidebar()">
-        <span>🧠</span> AI Insights
+        <!-- sparkles -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+          <path d="M5 3v4M19 17v4M3 5h4M17 19h4"/>
+        </svg>
+        AI Insights
       </div>
       <div class="nav-item" onclick="showView('archived');closeSidebar()">
-        <span>🗂</span> Archived
+        <!-- archive -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect width="20" height="5" x="2" y="3" rx="1"/>
+          <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/>
+        </svg>
+        Archived
       </div>
     </nav>
 
@@ -52,7 +79,6 @@
         <div class="user-avatar" id="user-avatar">U</div>
         <div class="user-meta">
           <div class="name" id="user-email-display">—</div>
-          <!-- Shows "Since <date>" or "Free Plan" — never hardcoded "Pro Plan" -->
           <div class="role" id="user-role">Free Plan</div>
         </div>
       </div>
@@ -68,7 +94,11 @@
     <!-- Topbar -->
     <header class="topbar">
       <div style="display:flex;align-items:center;gap:.6rem">
-        <button class="nav-toggle" onclick="openSidebar()" title="Menu">☰</button>
+        <button class="nav-toggle" onclick="openSidebar()" title="Menu">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="18" y2="18"/>
+          </svg>
+        </button>
         <div class="topbar-title" id="view-title">Email Dashboard</div>
       </div>
       <div class="topbar-actions">
@@ -76,9 +106,18 @@
           <span class="ws-dot" id="ws-dot"></span>
           <span id="ws-label">Connecting…</span>
         </div>
-        <button class="btn btn-ghost btn-sm" id="theme-toggle-btn" onclick="toggleTheme()" title="Toggle light/dark mode">☀️</button>
+        <button class="btn btn-ghost btn-sm" id="theme-toggle-btn" onclick="toggleTheme()" title="Toggle light/dark mode"
+                style="display:flex;align-items:center;gap:.3rem">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"/>
+            <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/>
+          </svg>
+        </button>
         <button class="btn btn-primary btn-sm" onclick="openNewEmailModal()">
-          + Track Email
+          <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M5 12h14M12 5l7 7-7 7"/>
+          </svg>
+          Track Email
         </button>
       </div>
     </header>
@@ -86,7 +125,6 @@
     <!-- ── Dashboard view ──────────────────────────────────── -->
     <div class="content" id="view-emails">
 
-      <!-- Stats row -->
       <div class="stats-row">
         <div class="stat-card">
           <div class="stat-label">Total Tracked</div>
@@ -106,31 +144,24 @@
         </div>
       </div>
 
-      <!-- Emails table -->
       <div class="card">
         <div class="card-header">
           <span class="card-title">Tracked Emails</span>
-          <!-- Search input -->
           <input type="search" id="email-search" placeholder="Search subject or recipient…"
                  oninput="handleSearch(this.value)"
                  style="padding:.35rem .6rem;border-radius:6px;border:1px solid var(--border);
-                        background:var(--bg);color:var(--text);font-size:.85rem;width:220px"/>
+                        background:var(--bg);color:var(--text);font-size:.85rem;width:220px;font-family:inherit"/>
           <button class="btn btn-ghost btn-sm" onclick="loadEmails()">↻ Refresh</button>
         </div>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <!-- data-sort attributes enable column sorting -->
                 <th data-sort="subject">Subject</th>
                 <th data-sort="recipientEmail">Recipient</th>
                 <th data-sort="createdAt">Sent</th>
                 <th data-sort="status">Status</th>
-                <!-- "?" tooltip on score column header -->
-                <th data-sort="leadScore"
-                    title="Reply Probability Score (0–100): open count + recency + frequency">
-                  Score ℹ
-                </th>
+                <th data-sort="leadScore" title="Reply Probability Score (0–100): open count + recency + frequency">Score ℹ</th>
                 <th data-sort="lastOpenedAt">Last Opened</th>
                 <th data-sort="clickCount">Clicks</th>
                 <th>Actions</th>
@@ -183,7 +214,6 @@
             </button>
           </form>
 
-          <!-- Result section with Copy buttons -->
           <div id="track-result" style="display:none;margin-top:1.5rem">
             <div style="color:var(--success);font-weight:600;margin-bottom:.75rem">
               ✅ Email registered for tracking!
@@ -209,7 +239,7 @@
       </div>
     </div>
 
-    <!-- ── AI Insights view ───────────────────────────────────── -->
+    <!-- ── AI Insights view ──────────────────────────────────── -->
     <div class="content" id="view-insights" style="display:none">
       <div class="grid-2-lg">
 
@@ -272,10 +302,10 @@
         </div>
       </div>
 
-      </div><!-- /grid -->
+      </div>
     </div>
 
-    <!-- ── Archived view ──────────────────────────────────── -->
+    <!-- ── Archived view ─────────────────────────────────────── -->
     <div class="content" id="view-archived" style="display:none">
       <div class="card">
         <div class="card-header">
@@ -326,7 +356,6 @@
           <label for="m-content">Email Body</label>
           <textarea id="m-content" placeholder="Paste your email content (used for AI follow-ups)…"></textarea>
         </div>
-        <!-- Modal result with copy buttons -->
         <div id="modal-result" style="display:none">
           <div style="color:var(--success);font-weight:600;margin-bottom:.5rem">✅ Tracking pixel created!</div>
           <div style="color:var(--muted);font-size:.8rem;margin-bottom:.3rem">
@@ -367,7 +396,6 @@
         Generate Follow-Up
       </button>
 
-      <!-- Fallback warning banner -->
       <div id="ai-fallback-warning" style="display:none;margin-top:.75rem;padding:.6rem .85rem;
            background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:8px;
            font-size:.8rem;color:#b45309">
@@ -401,7 +429,6 @@
   }
 </script>
 
-<!-- SockJS and STOMP loaded statically with defer — no sequential onload chaining -->
 <script src="js/config.js"></script>
 <script src="js/constants.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"

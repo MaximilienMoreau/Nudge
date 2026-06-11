@@ -3,219 +3,198 @@
 <head>
   <meta charset="UTF-8"/>
   <title>Nudge</title>
-  <style>
-    :root {
-      --primary: #6366f1;
-      --bg:      #0f172a;
-      --surface: #1e293b;
-      --border:  #334155;
-      --text:    #f1f5f9;
-      --muted:   #94a3b8;
-    }
-
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-
-    body {
-      font-family: system-ui, sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      width: 300px;
-      padding: 1rem;
-      font-size: 14px;
-    }
-
-    .header {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      margin-bottom: 1rem;
-      padding-bottom: .75rem;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .logo { font-size: 1.1rem; font-weight: 700; }
-    .tagline { color: var(--muted); font-size: .75rem; }
-
-    .status-row {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      padding: .6rem .75rem;
-      background: var(--surface);
-      border-radius: 8px;
-      margin-bottom: .75rem;
-    }
-
-    .dot {
-      width: 8px; height: 8px;
-      border-radius: 50%;
-      background: #ef4444;
-      flex-shrink: 0;
-    }
-    .dot.connected { background: #22c55e; }
-
-    .status-text { flex: 1; font-size: .85rem; }
-
-    /* Platform badge */
-    .platform-row {
-      display: flex;
-      align-items: center;
-      gap: .5rem;
-      padding: .5rem .75rem;
-      background: var(--surface);
-      border-radius: 8px;
-      margin-bottom: .75rem;
-      font-size: .8rem;
-    }
-    .platform-badge {
-      padding: 2px 8px;
-      border-radius: 20px;
-      font-size: .75rem;
-      font-weight: 600;
-    }
-    .platform-supported   { background: rgba(99,102,241,.2); color: #818cf8; }
-    .platform-unsupported { background: rgba(239,68,68,.15); color: #f87171; }
-
-    /* Login form */
-    .form-group { margin-bottom: .65rem; }
-    label { display: block; color: var(--muted); font-size: .75rem; margin-bottom: .25rem; text-transform: uppercase; }
-    input {
-      width: 100%;
-      padding: .45rem .7rem;
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 6px;
-      color: var(--text);
-      font-size: .85rem;
-      outline: none;
-    }
-    input:focus { border-color: var(--primary); }
-
-    .btn {
-      display: block;
-      width: 100%;
-      padding: .55rem;
-      background: var(--primary);
-      color: #fff;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-size: .875rem;
-      font-weight: 600;
-      margin-top: .75rem;
-      text-decoration: none;
-      text-align: center;
-    }
-    .btn:hover { background: #4f46e5; }
-    .btn.secondary { background: var(--surface); color: var(--text); border: 1px solid var(--border); margin-top: .5rem; }
-
-    .error   { color: #ef4444; font-size: .8rem; margin-top: .4rem; }
-
-    .user-info {
-      background: var(--surface);
-      border-radius: 8px;
-      padding: .75rem;
-      margin-bottom: .75rem;
-      font-size: .85rem;
-    }
-    .user-info .label { color: var(--muted); font-size: .75rem; margin-bottom: .2rem; }
-
-    .tip {
-      background: rgba(99,102,241,.1);
-      border: 1px solid rgba(99,102,241,.2);
-      border-radius: 8px;
-      padding: .6rem .75rem;
-      font-size: .8rem;
-      color: var(--muted);
-      line-height: 1.5;
-      margin-bottom: .75rem;
-    }
-    .tip.warn {
-      background: rgba(239,68,68,.08);
-      border-color: rgba(239,68,68,.2);
-    }
-
-    .hidden { display: none !important; }
-  </style>
+  <link rel="stylesheet" href="popup.css"/>
 </head>
 <body>
 
-  <div class="header">
-    <img src="icons/icon48.png" alt="Nudge" width="36" height="36" style="border-radius:8px;flex-shrink:0;">
-    <div>
-      <div class="logo">Nudge</div>
-      <div class="tagline">Email Tracking</div>
+<div class="p-app">
+
+  <!-- ── App header ────────────────────────────────────────── -->
+  <div class="p-header">
+    <div class="p-header-logo">
+      <div class="p-header-logo-icon">
+        <!-- mail-check icon -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h9"/>
+          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+          <path d="m16 19 2 2 4-4"/>
+        </svg>
+      </div>
+      <div>
+        <div class="p-header-name">Nudge</div>
+        <div class="p-header-tag">Email Intelligence</div>
+      </div>
+    </div>
+    <div class="p-status-chip">
+      <span class="dot" id="status-dot"></span>
+      <span id="status-text">Checking…</span>
     </div>
   </div>
 
-  <!-- Connection status -->
-  <div class="status-row">
-    <div class="dot" id="status-dot"></div>
-    <span class="status-text" id="status-text">Checking…</span>
-  </div>
-
-  <!-- Platform detection -->
-  <div class="platform-row" id="platform-row">
-    <span style="color:var(--muted)">Platform:</span>
+  <!-- ── Platform detection ─────────────────────────────────── -->
+  <div class="p-platform-row" id="platform-row">
+    <span class="p-platform-label">Active platform</span>
     <span class="platform-badge" id="platform-badge">Detecting…</span>
   </div>
 
-  <!-- Logged OUT view -->
-  <div id="login-view">
-    <div class="form-group">
-      <label>Email</label>
-      <input type="email" id="email" placeholder="you@example.com"/>
-    </div>
-    <div class="form-group">
-      <label>Password</label>
-      <input type="password" id="password" placeholder="••••••••"/>
-    </div>
-    <div id="login-error" class="error hidden"></div>
-    <button class="btn" id="login-btn" onclick="login()">Sign In</button>
-    <p style="color:var(--muted);font-size:.75rem;margin-top:.5rem;text-align:center">
-      Don't have an account? Sign up at the Nudge dashboard.
-    </p>
-  </div>
+  <!-- ── Body layout with icon sidebar ──────────────────────── -->
+  <div class="p-layout">
 
-  <!-- Logged IN view -->
-  <div id="logged-view" class="hidden">
-    <div class="user-info">
-      <div class="label">Signed in as</div>
-      <div id="user-email-display" style="font-weight:600"></div>
+    <!-- Icon sidebar -->
+    <div class="p-sidebar">
+      <div class="p-logo-mark">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M22 13V6a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2v12c0 1.1.9 2 2 2h9"/>
+          <path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/>
+          <path d="m16 19 2 2 4-4"/>
+        </svg>
+      </div>
+
+      <div class="p-sidebar-nav">
+        <!-- Status tab (default) -->
+        <button class="p-nav-btn active" title="Status" onclick="showTab('status', this)">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
+            <polyline points="9 22 9 12 15 12 15 22"/>
+          </svg>
+        </button>
+        <!-- Track tab -->
+        <button class="p-nav-btn" title="Track Email" onclick="showTab('track', this)">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="10"/><path d="M8 12h8M12 8v8"/>
+          </svg>
+        </button>
+        <!-- Settings tab -->
+        <button class="p-nav-btn" title="Settings" onclick="showTab('settings', this)">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/>
+          </svg>
+        </button>
+      </div>
+
+      <div class="p-sidebar-footer">
+        <!-- Sign out (only shown when logged in) -->
+        <button class="p-nav-btn" id="sidebar-logout-btn" title="Sign Out" onclick="logout()" style="display:none">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/>
+            <polyline points="16 17 21 12 16 7"/>
+            <line x1="21" y1="12" x2="9" y2="12"/>
+          </svg>
+        </button>
+      </div>
     </div>
 
-    <!-- Shown on supported platforms -->
-    <div class="tip" id="tip-supported">
-      ✅ Nudge is active! Open a compose window — the tracking panel will appear inline next to Send.
-    </div>
+    <!-- Main panel -->
+    <div class="p-main">
 
-    <!-- Shown on unsupported platforms -->
-    <div class="tip warn hidden" id="tip-fallback">
-      ⚠️ Direct injection is not supported on this page. Use the web dashboard to track emails manually.
-    </div>
+      <!-- ── STATUS TAB ──────────────────────────────────────── -->
+      <div id="tab-status" class="p-tab-panel">
 
-    <a id="dashboard-link" href="#" target="_blank" class="btn" style="margin-top:0">
-      Open Dashboard ↗
-    </a>
-    <button class="btn secondary" onclick="logout()">Sign Out</button>
-  </div>
+        <!-- Logged OUT view -->
+        <div id="login-view" class="p-body">
+          <div class="p-section-header">
+            <span class="p-section-title">Sign In</span>
+          </div>
+          <div style="padding: .85rem">
+            <div class="p-form-group">
+              <label>Email</label>
+              <input class="p-input" type="email" id="email" placeholder="you@example.com"/>
+            </div>
+            <div class="p-form-group">
+              <label>Password</label>
+              <input class="p-input" type="password" id="password" placeholder="••••••••"/>
+            </div>
+            <div id="login-error" class="p-error"></div>
+            <button class="p-btn p-btn-primary" style="margin-top:.5rem" id="login-btn" onclick="login()">Sign In</button>
+            <p style="color:var(--muted);font-size:.72rem;margin-top:.5rem;text-align:center;line-height:1.5">
+              Don't have an account? Sign up at the Nudge dashboard.
+            </p>
+          </div>
+        </div>
 
-  <!-- Server URL setting (always visible at bottom) -->
-  <div style="margin-top:.75rem;padding-top:.6rem;border-top:1px solid var(--border)">
-    <label style="color:var(--muted);font-size:.7rem;text-transform:uppercase;letter-spacing:.05em">
-      Server URL
-    </label>
-    <div style="display:flex;gap:.4rem;margin-top:.3rem">
-      <input type="url" id="server-url" placeholder="http://localhost:8080"
-             style="flex:1;font-size:.75rem;padding:.35rem .5rem"/>
-      <button onclick="saveServerUrl()"
-              style="padding:.35rem .6rem;background:var(--primary);color:#fff;border:none;
-                     border-radius:6px;cursor:pointer;font-size:.75rem;font-weight:600;white-space:nowrap">
-        Save
-      </button>
-    </div>
-  </div>
+        <!-- Logged IN view -->
+        <div id="logged-view" class="hidden">
+          <div class="p-section-header">
+            <span class="p-section-title">Status</span>
+          </div>
+          <div class="p-body">
+            <!-- User block -->
+            <div class="p-user-block">
+              <div class="p-user-avatar">U</div>
+              <div>
+                <div class="p-user-email-label">Signed in as</div>
+                <div class="p-user-email-value" id="user-email-display"></div>
+              </div>
+            </div>
 
-</body>
+            <!-- Tips -->
+            <div class="p-tip" id="tip-supported">
+              ✅ Nudge is active on this page. Open a compose window — the tracking panel will appear inline next to Send.
+            </div>
+            <div class="p-tip warn hidden" id="tip-fallback">
+              ⚠️ Direct injection isn't supported here. Use the web dashboard to track emails manually.
+            </div>
+
+            <a id="dashboard-link" href="#" target="_blank" class="p-btn p-btn-primary">
+              Open Dashboard
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/>
+                <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
+              </svg>
+            </a>
+            <button class="p-btn p-btn-ghost" onclick="logout()">Sign Out</button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ── TRACK TAB ───────────────────────────────────────── -->
+      <div id="tab-track" class="p-tab-panel hidden">
+        <div class="p-section-header">
+          <span class="p-section-title">Quick Track</span>
+        </div>
+        <div class="p-body" style="font-size:.78rem;color:var(--muted);padding-top:1rem;text-align:center;line-height:1.6">
+          <div style="font-size:1.8rem;margin-bottom:.5rem;opacity:.5">📨</div>
+          Open a compose window on a supported platform — Nudge will inject the tracking panel automatically.
+          <br/><br/>
+          Or use the full dashboard to track manually.
+          <br/><br/>
+          <a id="dashboard-link-track" href="#" target="_blank" class="p-btn p-btn-primary" style="margin-top:.25rem">
+            Open Dashboard ↗
+          </a>
+        </div>
+      </div>
+
+      <!-- ── SETTINGS TAB ────────────────────────────────────── -->
+      <div id="tab-settings" class="p-tab-panel hidden">
+        <div class="p-section-header">
+          <span class="p-section-title">Server URL</span>
+        </div>
+        <div class="p-body">
+          <p style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem;line-height:1.5">
+            Point Nudge to your self-hosted backend instance.
+          </p>
+          <div class="p-footer-row">
+            <input class="p-url-input" type="url" id="server-url" placeholder="http://localhost:8080"/>
+            <button class="p-save-btn" onclick="saveServerUrl()">Save</button>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /p-main -->
+  </div><!-- /p-layout -->
+
+</div><!-- /p-app -->
+
 <script src="popup.js"></script>
+<script>
+  function showTab(name, btn) {
+    document.querySelectorAll('.p-tab-panel').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.p-nav-btn').forEach(el => el.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.remove('hidden');
+    if (btn) btn.classList.add('active');
+  }
+</script>
+</body>
 </html>
