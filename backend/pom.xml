@@ -15,7 +15,7 @@
     <artifactId>nudge-backend</artifactId>
     <version>1.0.0-SNAPSHOT</version>
     <name>nudge-backend</name>
-    <description>Nudge — AI-powered email assistant backend</description>
+    <description>Nudge: AI-powered email assistant backend</description>
 
     <properties>
         <java.version>17</java.version>
