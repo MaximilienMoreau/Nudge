@@ -63,9 +63,13 @@ public class AuthService {
 
     /** Authenticate a user and return a JWT. Throws on bad credentials. */
     public AuthResponse login(LoginRequest request) {
-        authManager.authenticate(
-                new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
-        );
+        try {
+            authManager.authenticate(
+                    new UsernamePasswordAuthenticationToken(request.getEmail(), request.getPassword())
+            );
+        } catch (BadCredentialsException ex) {
+            throw new BadCredentialsException("Invalid email or password");
+        }
 
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));

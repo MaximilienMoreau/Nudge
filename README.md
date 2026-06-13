@@ -321,10 +321,11 @@ Scores ≥ 70 are flagged as **Hot Leads** 🔥.
 - [ ] Set `spring.jpa.hibernate.ddl-auto=validate` (not `update`)
 - [ ] Configure a real database with proper credentials
 - [ ] Use HTTPS — tracking pixels won't load over HTTP in many email clients
+- [ ] Set `COOKIE_SECURE=true` — adds the `Secure` flag to the JWT cookie (requires HTTPS)
 - [ ] Update `app.base.url` to your production domain
 - [ ] Update `API_BASE` in `frontend/js/config.js` to point to your production backend URL
 - [ ] Set `OPENAI_API_KEY` environment variable
-- [ ] Configure CORS `allowedOriginPatterns` to your specific frontend domain
+- [ ] Configure `CORS_ALLOWED_ORIGINS` to your specific frontend domain (no wildcard)
 - [ ] Replace in-memory rate limiter with Redis + Bucket4j for multi-instance deployments
 
 ---

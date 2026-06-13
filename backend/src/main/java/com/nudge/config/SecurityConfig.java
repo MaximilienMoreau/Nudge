@@ -23,6 +23,7 @@ import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
 
+import java.util.Arrays;
 import java.util.List;
 
 /**
@@ -43,8 +44,8 @@ public class SecurityConfig {
     private final UserDetailsService userDetailsService;
     private final RateLimitFilter rateLimitFilter;
 
-    /** Injected from application.properties / env var */
-    @Value("${app.cors.allowed-origins:*}")
+    /** Injected from application.properties / env var. No default — app fails fast if not set. */
+    @Value("${app.cors.allowed-origins}")
     private String corsAllowedOrigins;
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter,
@@ -85,7 +86,10 @@ public class SecurityConfig {
 
         // Credentials (httpOnly cookie) require explicit origins — wildcards are forbidden by spec.
         // setAllowedOriginPatterns supports wildcards AND works with allowCredentials(true).
-        List<String> origins = List.of(corsAllowedOrigins.split(","));
+        List<String> origins = Arrays.stream(corsAllowedOrigins.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .toList();
         config.setAllowedOriginPatterns(origins);
 
         config.setAllowedMethods(List.of("GET", "POST", "PUT", "DELETE", "OPTIONS"));

@@ -72,6 +72,14 @@
         </svg>
         Archived
       </div>
+      <div class="nav-item" onclick="showView('settings');closeSidebar()">
+        <!-- settings / sliders -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+        Settings
+      </div>
     </nav>
 
     <div class="sidebar-footer">
@@ -84,11 +92,6 @@
       </div>
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.5rem" onclick="logout()">
         Sign Out
-      </button>
-      <button class="btn btn-ghost btn-sm"
-              style="width:100%;margin-top:.35rem;color:var(--danger);border-color:transparent"
-              onclick="openDeleteAccountModal()">
-        Delete Account
       </button>
     </div>
   </aside>
@@ -335,6 +338,70 @@
           </table>
         </div>
       </div>
+    </div>
+
+    <!-- ── Settings view ─────────────────────────────────── -->
+    <div class="content" id="view-settings" style="display:none">
+
+      <!-- Account info -->
+      <div class="card" style="margin-bottom:1.25rem">
+        <div class="card-header"><span class="card-title">Account</span></div>
+        <div class="card-body">
+          <div style="display:flex;align-items:center;gap:1rem">
+            <div style="width:48px;height:48px;border-radius:50%;background:var(--primary);
+                        display:flex;align-items:center;justify-content:center;
+                        font-size:1.25rem;font-weight:700;color:#fff;flex-shrink:0"
+                 id="settings-avatar">U</div>
+            <div>
+              <div style="font-weight:600" id="settings-email">—</div>
+              <div style="font-size:.8rem;color:var(--muted)" id="settings-since">—</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Change password -->
+      <div class="card" style="margin-bottom:1.25rem">
+        <div class="card-header"><span class="card-title">Change Password</span></div>
+        <div class="card-body">
+          <form id="change-password-form" onsubmit="submitChangePassword(event)" style="max-width:420px">
+            <div class="form-group">
+              <label for="cp-current">Current password</label>
+              <input type="password" id="cp-current" autocomplete="current-password" required/>
+            </div>
+            <div class="form-group">
+              <label for="cp-new">New password</label>
+              <input type="password" id="cp-new" autocomplete="new-password" minlength="8" required/>
+            </div>
+            <div class="form-group">
+              <label for="cp-confirm">Confirm new password</label>
+              <input type="password" id="cp-confirm" autocomplete="new-password" required/>
+            </div>
+            <p id="cp-error"   style="display:none;color:var(--danger);font-size:.82rem;margin-bottom:.75rem"></p>
+            <p id="cp-success" style="display:none;color:var(--success);font-size:.82rem;margin-bottom:.75rem"></p>
+            <button type="submit" class="btn btn-primary btn-sm" id="cp-btn">Save password</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Danger zone -->
+      <div class="card" style="border-color:rgba(239,68,68,.25)">
+        <div class="card-header">
+          <span class="card-title" style="color:var(--danger)">Danger Zone</span>
+        </div>
+        <div class="card-body" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem">
+          <div>
+            <div style="font-weight:600;font-size:.875rem">Delete account</div>
+            <div style="font-size:.8rem;color:var(--muted)">Permanently removes your account and all tracked data.</div>
+          </div>
+          <button class="btn btn-sm"
+                  style="background:transparent;color:var(--danger);border-color:var(--danger);flex-shrink:0"
+                  onclick="openDeleteAccountModal()">
+            Delete my account
+          </button>
+        </div>
+      </div>
+
     </div>
 
   </div>

@@ -147,7 +147,7 @@ public class EncryptionService {
 
         } catch (Exception e) {
             log.error("Decryption failed (data corruption or key mismatch): {}", e.getMessage());
-            return null;
+            throw new IllegalStateException("Content could not be decrypted", e);
         }
     }
 
