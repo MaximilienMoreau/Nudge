@@ -13,12 +13,11 @@ import com.nudge.repository.TrackingEventRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.time.DayOfWeek;
 import java.time.format.TextStyle;
@@ -29,7 +28,7 @@ import java.util.Map;
 /**
  * Generates AI-powered follow-up emails and send-time recommendations.
  *
- * RestTemplate injected as a Spring bean (no inline instantiation).
+ * RestClient (Spring 6.1) injected as a Spring bean — replaces RestTemplate.
  * ObjectMapper injected as a Spring bean.
  * suggestSendTime uses a native SQL aggregation query rather than
  *     loading all open events into JVM memory.
@@ -52,20 +51,20 @@ public class AIService {
     private final TrackedEmailRepository  emailRepo;
     private final LeadScoringService      leadScoringService;
     private final EncryptionService       encryptionService;
-    private final RestTemplate            restTemplate;   // injected bean
+    private final RestClient              restClient;     // injected bean
     private final ObjectMapper            objectMapper;   // injected bean
 
     public AIService(TrackingEventRepository eventRepo,
                      TrackedEmailRepository emailRepo,
                      LeadScoringService leadScoringService,
                      EncryptionService encryptionService,
-                     RestTemplate restTemplate,
+                     RestClient restClient,
                      ObjectMapper objectMapper) {
         this.eventRepo         = eventRepo;
         this.emailRepo         = emailRepo;
         this.leadScoringService = leadScoringService;
         this.encryptionService  = encryptionService;
-        this.restTemplate       = restTemplate;
+        this.restClient        = restClient;
         this.objectMapper       = objectMapper;
     }
 
@@ -125,12 +124,13 @@ public class AIService {
                     "temperature", 0.7
             );
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
-            headers.setBearerAuth(apiKey);
-
-            String rawResponse = restTemplate.postForObject(
-                    OPENAI_URL, new HttpEntity<>(body, headers), String.class);
+            String rawResponse = restClient.post()
+                    .uri(OPENAI_URL)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .header(HttpHeaders.AUTHORIZATION, "Bearer " + apiKey)
+                    .body(body)
+                    .retrieve()
+                    .body(String.class);
 
             return parseResponse(rawResponse, ctx.subject);
         } catch (Exception e) {
