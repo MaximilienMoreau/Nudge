@@ -110,4 +110,21 @@ public class AuthService {
         userRepository.save(user);
         log.info("User logged out (token revoked): {}", userEmail);
     }
+
+    /**
+     * Permanently delete the account after verifying the user's password.
+     * ON DELETE CASCADE in the schema removes all tracked emails and events.
+     */
+    @Transactional
+    public void deleteAccount(String userEmail, String password) {
+        User user = userRepository.findByEmail(userEmail)
+                .orElseThrow(() -> new IllegalArgumentException("User not found"));
+
+        if (!passwordEncoder.matches(password, user.getPasswordHash())) {
+            throw new BadCredentialsException("Password is incorrect");
+        }
+
+        userRepository.delete(user);
+        log.info("Account deleted: {}", userEmail);
+    }
 }

@@ -588,6 +588,60 @@ function logout() {
   window.location.href = 'index.html';
 }
 
+// ── Delete account ────────────────────────────────────────────
+
+function openDeleteAccountModal() {
+  const btn = document.getElementById('delete-account-btn');
+  document.getElementById('delete-account-password').value = '';
+  document.getElementById('delete-account-error').style.display = 'none';
+  btn.disabled = false;
+  btn.textContent = 'Delete my account';
+  document.getElementById('delete-account-modal').style.display = 'flex';
+  closeSidebar();
+  setTimeout(() => document.getElementById('delete-account-password').focus(), 100);
+}
+
+function closeDeleteAccountModal(e) {
+  if (e && e.target !== document.getElementById('delete-account-modal')) return;
+  document.getElementById('delete-account-modal').style.display = 'none';
+}
+
+async function confirmDeleteAccount() {
+  const password = document.getElementById('delete-account-password').value;
+  const errorEl  = document.getElementById('delete-account-error');
+  const btn       = document.getElementById('delete-account-btn');
+
+  if (!password) {
+    errorEl.textContent = 'Please enter your password.';
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Deleting…';
+  errorEl.style.display = 'none';
+
+  try {
+    const res = await authFetch('/api/auth/account', {
+      method: 'DELETE',
+      body: JSON.stringify({ password })
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || `Error ${res.status}`);
+    }
+
+    localStorage.clear();
+    window.location.href = 'index.html';
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Delete my account';
+  }
+}
+
 // ── Toast system ──────────────────────────────────────────────
 
 function showToast(title, message, type = 'info') {
