@@ -34,6 +34,9 @@ public class AuthController {
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
 
+    @Value("${app.cookie.secure:false}")
+    private boolean cookieSecure;
+
     public AuthController(AuthService authService) {
         this.authService = authService;
     }
@@ -97,6 +100,7 @@ public class AuthController {
     private void setAuthCookie(HttpServletResponse response, String token) {
         ResponseCookie cookie = ResponseCookie.from(com.nudge.security.SecurityConstants.JWT_COOKIE_NAME, token)
                 .httpOnly(true)
+                .secure(cookieSecure)
                 .sameSite("Strict")
                 .path("/")
                 .maxAge(Duration.ofMillis(jwtExpirationMs))
@@ -107,6 +111,7 @@ public class AuthController {
     private void clearAuthCookie(HttpServletResponse response) {
         ResponseCookie cookie = ResponseCookie.from(com.nudge.security.SecurityConstants.JWT_COOKIE_NAME, "")
                 .httpOnly(true)
+                .secure(cookieSecure)
                 .sameSite("Strict")
                 .path("/")
                 .maxAge(0)

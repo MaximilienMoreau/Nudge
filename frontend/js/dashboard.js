@@ -55,8 +55,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── View switching ────────────────────────────────────────────
 
-const VIEW_TITLES = { emails: 'Email Dashboard', track: 'Track New Email', insights: 'AI Insights', archived: 'Archived Emails' };
-const ALL_VIEWS   = ['emails', 'track', 'insights', 'archived'];
+const VIEW_TITLES = { emails: 'Email Dashboard', track: 'Track New Email', insights: 'AI Insights', archived: 'Archived Emails', settings: 'Settings' };
+const ALL_VIEWS   = ['emails', 'track', 'insights', 'archived', 'settings'];
 
 function showView(name) {
   ALL_VIEWS.forEach(v => {
@@ -66,8 +66,9 @@ function showView(name) {
   document.querySelectorAll('.nav-item').forEach((el, i) => {
     el.classList.toggle('active', ALL_VIEWS[i] === name);
   });
-  if (name === 'insights') loadSendTime();
-  if (name === 'archived') loadArchivedEmails();
+  if (name === 'insights')  loadSendTime();
+  if (name === 'archived')  loadArchivedEmails();
+  if (name === 'settings')  loadSettingsView();
 }
 
 // ── Load emails (paginated) ───────────────────────────────────
@@ -588,6 +589,82 @@ function logout() {
   window.location.href = 'index.html';
 }
 
+// ── Settings view ─────────────────────────────────────────────
+
+function loadSettingsView() {
+  const email     = localStorage.getItem('nudge_email') || '—';
+  const createdAt = localStorage.getItem('nudge_createdAt');
+
+  document.getElementById('settings-email').textContent = email;
+  document.getElementById('settings-avatar').textContent = email.charAt(0).toUpperCase();
+
+  if (createdAt) {
+    const date = new Date(createdAt);
+    document.getElementById('settings-since').textContent =
+      'Member since ' + date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+  } else {
+    document.getElementById('settings-since').textContent = '';
+  }
+
+  // Reset the change-password form
+  document.getElementById('change-password-form').reset();
+  document.getElementById('cp-error').style.display   = 'none';
+  document.getElementById('cp-success').style.display = 'none';
+  const cpBtn = document.getElementById('cp-btn');
+  cpBtn.disabled = false;
+  cpBtn.textContent = 'Save password';
+}
+
+async function submitChangePassword(e) {
+  e.preventDefault();
+
+  const currentPw = document.getElementById('cp-current').value;
+  const newPw     = document.getElementById('cp-new').value;
+  const confirmPw = document.getElementById('cp-confirm').value;
+  const errorEl   = document.getElementById('cp-error');
+  const successEl = document.getElementById('cp-success');
+  const btn       = document.getElementById('cp-btn');
+
+  errorEl.style.display   = 'none';
+  successEl.style.display = 'none';
+
+  if (newPw !== confirmPw) {
+    errorEl.textContent = 'New passwords do not match.';
+    errorEl.style.display = 'block';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const res = await authFetch('/api/auth/password', {
+      method: 'PUT',
+      body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw })
+    });
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || data.message || `Error ${res.status}`);
+    }
+
+    document.getElementById('change-password-form').reset();
+    successEl.textContent = 'Password updated. You will be signed out shortly.';
+    successEl.style.display = 'block';
+
+    // Server rotated the JWT cookie — let the session expire gracefully
+    setTimeout(() => {
+      localStorage.clear();
+      window.location.href = 'index.html';
+    }, 2500);
+  } catch (err) {
+    errorEl.textContent = err.message;
+    errorEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Save password';
+  }
+}
+
 // ── Delete account ────────────────────────────────────────────
 
 function openDeleteAccountModal() {
@@ -672,7 +749,8 @@ function statusBadge(status) {
 /**
  * Score bar now includes a tooltip explaining the scoring breakdown.
  */
-function scoreBar(score) {
+function scoreBar(rawScore) {
+  const score   = Math.min(100, Math.max(0, Math.round(Number(rawScore) || 0)));
   const color   = score >= HOT_LEAD_THRESHOLD ? '#f59e0b' : score >= 40 ? '#6366f1' : '#64748b';
   const tooltip = 'Reply Probability Score (0–100). ' +
                   'Based on: open count (up to 40 pts), ' +

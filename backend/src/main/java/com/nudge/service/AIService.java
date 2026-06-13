@@ -91,8 +91,13 @@ public class AIService {
         int openCount       = (int) events.stream().filter(e -> e.getType() == EventType.OPEN).count();
         int engagementScore = leadScoringService.computeScore(events);
 
-        // Decrypt content before sending to the AI
-        String decryptedContent = encryptionService.decrypt(email.getContent());
+        String decryptedContent;
+        try {
+            decryptedContent = encryptionService.decrypt(email.getContent());
+        } catch (IllegalStateException e) {
+            log.warn("Could not decrypt content for email id={} — generating follow-up without body", email.getId());
+            decryptedContent = null;
+        }
 
         // Build an enriched internal request
         InternalFollowUpContext ctx = new InternalFollowUpContext(

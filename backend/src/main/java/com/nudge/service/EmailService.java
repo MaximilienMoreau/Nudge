@@ -219,8 +219,12 @@ public class EmailService {
         EmailDTO dto = new EmailDTO();
         dto.setId(email.getId());
         dto.setSubject(email.getSubject());
-        // decrypt content before sending to frontend
-        dto.setContent(encryptionService.decrypt(email.getContent()));
+        try {
+            dto.setContent(encryptionService.decrypt(email.getContent()));
+        } catch (IllegalStateException e) {
+            log.warn("Could not decrypt content for email id={}: {}", email.getId(), e.getMessage());
+            dto.setContent(null);
+        }
         dto.setRecipientEmail(email.getRecipientEmail());
         dto.setTrackingId(email.getTrackingId());
         dto.setCreatedAt(email.getCreatedAt());
