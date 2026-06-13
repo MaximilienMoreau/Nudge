@@ -10,6 +10,7 @@ import javax.crypto.Cipher;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.util.Base64;
 import java.util.HashMap;
@@ -94,7 +95,7 @@ public class EncryptionService {
 
             Cipher cipher = Cipher.getInstance(ALGORITHM);
             cipher.init(Cipher.ENCRYPT_MODE, activeKey, new GCMParameterSpec(TAG_BITS, iv));
-            byte[] ciphertext = cipher.doFinal(plaintext.getBytes());
+            byte[] ciphertext = cipher.doFinal(plaintext.getBytes(StandardCharsets.UTF_8));
 
             byte[] combined = new byte[IV_BYTES + ciphertext.length];
             System.arraycopy(iv,         0, combined, 0,       IV_BYTES);
@@ -143,7 +144,7 @@ public class EncryptionService {
 
             Cipher cipher = Cipher.getInstance(ALGORITHM);
             cipher.init(Cipher.DECRYPT_MODE, key, new GCMParameterSpec(TAG_BITS, iv));
-            return new String(cipher.doFinal(ciphertext));
+            return new String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8);
 
         } catch (Exception e) {
             log.error("Decryption failed (data corruption or key mismatch): {}", e.getMessage());

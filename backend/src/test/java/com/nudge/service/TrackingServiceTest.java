@@ -167,15 +167,15 @@ class TrackingServiceTest {
                 .thenReturn(Optional.empty());
         when(leadScoringService.computeScore(anyLong(), anyLong(), any())).thenReturn(30);
 
-        assertThat(service.recordClick("test-uuid", new MockHttpServletRequest())).isNotNull();
+        assertThat(service.recordClick("test-uuid", new MockHttpServletRequest())).isTrue();
         verify(eventRepo).save(argThat(e -> e.getType() == EventType.CLICK));
     }
 
     @Test
-    void recordClick_returnsNull_whenEmailNotFound() {
+    void recordClick_returnsFalse_whenEmailNotFound() {
         when(emailRepo.findByTrackingId("unknown")).thenReturn(Optional.empty());
 
-        assertThat(service.recordClick("unknown", new MockHttpServletRequest())).isNull();
+        assertThat(service.recordClick("unknown", new MockHttpServletRequest())).isFalse();
         verify(eventRepo, never()).save(any());
     }
 

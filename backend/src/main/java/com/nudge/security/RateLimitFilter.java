@@ -1,5 +1,8 @@
 package com.nudge.security;
 
+import io.github.bucket4j.Bandwidth;
+import io.github.bucket4j.Bucket;
+import io.github.bucket4j.Refill;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -12,22 +15,26 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.time.Duration;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicInteger;
 
 /**
- * Simple token-bucket rate limiter applied to sensitive endpoints.
+ * Token-bucket rate limiter applied to sensitive endpoints (Bucket4j).
  *
  * Protected routes:
  *   POST /api/auth/login    — 10 requests per minute per IP (brute-force guard)
  *   POST /api/auth/register — 5 requests per minute per IP
  *   GET  /track/open/**     — 30 requests per minute per tracking-ID (inflation guard)
  *
- * Implementation: sliding-window counter keyed on (IP|trackingId) with 60-second reset.
- * This is an in-memory, single-node implementation — suitable for MVP.
- * Replace with Redis + Bucket4j for multi-instance deployments.
+ * Token-bucket semantics (Bucket4j): each key starts with a full bucket of capacity N.
+ * Tokens refill greedily at N/minute. A request that finds an empty bucket is rejected
+ * with 429 — no token is consumed, so the caller cannot probe by counting rejections.
+ *
+ * To migrate to Redis for multi-instance deployments, replace the in-memory BucketEntry
+ * map with a Bucket4j ProxyManager backed by a Redisson or Lettuce Redis connection.
+ * The doFilter logic stays identical — only the bucket factory changes.
  *
  * X-Forwarded-For is only trusted when the direct connection originates from a
  *     configured trusted proxy range — same logic as TrackingService.extractIp().
@@ -46,18 +53,26 @@ public class RateLimitFilter implements Filter {
 
     private static final long WINDOW_MS = 60_000L;
 
-    /** Max attempts per window for each protected path pattern */
+    /** Max tokens per minute for each protected path pattern */
     private static final int LOGIN_LIMIT    = 10;
     private static final int REGISTER_LIMIT = 5;
     private static final int TRACK_LIMIT    = 30;
 
-    private static final class RateBucket {
-        long count;
-        long windowStart;
-        RateBucket(long now) { this.count = 0L; this.windowStart = now; }
+    /** Wraps a Bucket4j Bucket with a last-used timestamp for eviction. */
+    private static final class BucketEntry {
+        final Bucket bucket;
+        volatile long lastUsedMs;
+
+        BucketEntry(int capacity) {
+            this.bucket = Bucket.builder()
+                    .addLimit(Bandwidth.classic(capacity,
+                            Refill.greedy(capacity, Duration.ofMinutes(1))))
+                    .build();
+            this.lastUsedMs = System.currentTimeMillis();
+        }
     }
 
-    private final Map<String, RateBucket> counters = new ConcurrentHashMap<>();
+    private final Map<String, BucketEntry> buckets = new ConcurrentHashMap<>();
 
     @Override
     public void doFilter(ServletRequest req, ServletResponse res, FilterChain chain)
@@ -104,31 +119,27 @@ public class RateLimitFilter implements Filter {
         chain.doFilter(req, res);
     }
 
-    private boolean isRateLimited(String key, int limit) {
-        long now = System.currentTimeMillis();
-        RateBucket bucket = counters.computeIfAbsent(key, k -> new RateBucket(now));
-
-        synchronized (bucket) {
-            if (now - bucket.windowStart > WINDOW_MS) {
-                bucket.count       = 0L;
-                bucket.windowStart = now;
-            }
-            bucket.count++;
-            return bucket.count > limit;
-        }
+    /**
+     * Tries to consume one token from the bucket for the given key.
+     * Returns true (= rate limited) if no token is available.
+     * Bucket4j's tryConsume is thread-safe — no external synchronisation needed.
+     *
+     * To migrate to Redis: replace `buckets.computeIfAbsent(...)` with a call to
+     * a Bucket4j Redis ProxyManager. The rest of this method stays identical.
+     */
+    private boolean isRateLimited(String key, int capacity) {
+        BucketEntry entry = buckets.computeIfAbsent(key, k -> new BucketEntry(capacity));
+        entry.lastUsedMs = System.currentTimeMillis();
+        return !entry.bucket.tryConsume(1);
     }
 
-    /** Purge expired windows every 10 minutes to prevent unbounded memory growth. */
+    /** Evict entries idle for more than 2 minutes to bound memory usage. */
     @Scheduled(fixedDelay = 600_000)
     void evictExpiredEntries() {
-        long now = System.currentTimeMillis();
-        int before = counters.size();
-        counters.entrySet().removeIf(entry -> {
-            synchronized (entry.getValue()) {
-                return now - entry.getValue().windowStart > WINDOW_MS;
-            }
-        });
-        int removed = before - counters.size();
+        long cutoff = System.currentTimeMillis() - WINDOW_MS * 2;
+        int before = buckets.size();
+        buckets.entrySet().removeIf(e -> e.getValue().lastUsedMs < cutoff);
+        int removed = before - buckets.size();
         if (removed > 0) log.debug("RateLimitFilter evicted {} expired entries", removed);
     }
 

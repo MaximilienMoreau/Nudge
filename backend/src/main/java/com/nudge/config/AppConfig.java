@@ -4,12 +4,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.web.client.RestClient;
 
-import java.time.Duration;
 import java.util.Arrays;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -17,7 +16,8 @@ import java.util.stream.Collectors;
 /**
  * General application bean definitions.
  *
- * RestTemplate exposed as a Spring bean with configured timeouts.
+ * RestClient (Spring 6.1) exposed as a Spring bean with configured timeouts.
+ *     Replaces the deprecated RestTemplate (in maintenance mode since Spring 5.0).
  * Reuse Spring's managed ObjectMapper (Jackson auto-configuration).
  * Trusted proxy ranges parsed from configuration property.
  */
@@ -28,14 +28,17 @@ public class AppConfig {
     private String trustedProxyRanges;
 
     /**
-     * Shared RestTemplate with explicit connection and read timeouts.
-     * Injects into AIService instead of instantiating inline.
+     * Shared RestClient with explicit connection and read timeouts.
+     * Injected into AIService for OpenAI HTTP calls.
+     * Swap the requestFactory to OkHttp / Apache HttpClient if needed.
      */
     @Bean
-    public RestTemplate restTemplate(RestTemplateBuilder builder) {
-        return builder
-                .setConnectTimeout(Duration.ofSeconds(5))
-                .setReadTimeout(Duration.ofSeconds(30))
+    public RestClient restClient() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(5_000);
+        factory.setReadTimeout(30_000);
+        return RestClient.builder()
+                .requestFactory(factory)
                 .build();
     }
 
