@@ -85,6 +85,11 @@
       <button class="btn btn-ghost btn-sm" style="width:100%;margin-top:.5rem" onclick="logout()">
         Sign Out
       </button>
+      <button class="btn btn-ghost btn-sm"
+              style="width:100%;margin-top:.35rem;color:var(--danger);border-color:transparent"
+              onclick="openDeleteAccountModal()">
+        Delete Account
+      </button>
     </div>
   </aside>
 
@@ -414,6 +419,32 @@
           <button class="btn btn-ghost btn-sm" onclick="generateFollowUp()">↺ Regenerate</button>
         </div>
       </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="delete-account-modal" style="display:none" onclick="closeDeleteAccountModal(event)">
+  <div class="modal" onclick="event.stopPropagation()">
+    <div class="modal-header">
+      <h3>Delete Account</h3>
+      <button class="modal-close" onclick="closeDeleteAccountModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--muted);font-size:.9rem;margin-bottom:1.25rem">
+        This will permanently delete your account and all tracked emails. This action cannot be undone.
+      </p>
+      <label class="form-label">Confirm your password</label>
+      <input type="password" id="delete-account-password" class="form-control"
+             placeholder="Your current password" autocomplete="current-password">
+      <p id="delete-account-error" style="display:none;color:var(--danger);font-size:.82rem;margin-top:.5rem"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeDeleteAccountModal()">Cancel</button>
+      <button class="btn btn-sm" id="delete-account-btn"
+              style="background:var(--danger);color:#fff;border-color:var(--danger)"
+              onclick="confirmDeleteAccount()">
+        Delete my account
+      </button>
     </div>
   </div>
 </div>

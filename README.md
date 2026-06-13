@@ -131,6 +131,14 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
 | POST   | `/api/auth/login`      | Exchange credentials for a JWT                   |
 | PUT    | `/api/auth/password`   | Change password (requires JWT) — returns new JWT |
 | POST   | `/api/auth/logout`     | Revoke current token server-side (requires JWT)  |
+| DELETE | `/api/auth/account`    | Permanently delete the account (requires JWT)    |
+
+**DELETE `/api/auth/account` body:**
+```json
+{ "password": "current-password" }
+```
+
+> Password confirmation is required to prevent accidental or CSRF-triggered deletion. All tracked emails and events are removed via `ON DELETE CASCADE`.
 
 **POST `/api/auth/register` and `/api/auth/login` body:**
 ```json
@@ -143,7 +151,7 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
   "token": "eyJ...",
   "email": "you@example.com",
   "userId": 1,
-  "createdAt": "2026-01-01T12:00:00"
+  "createdAt": "2027-01-01T12:00:00"
 }
 ```
 
@@ -186,7 +194,7 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
 
 **POST `/api/emails/{id}/schedule` body:**
 ```json
-{ "scheduledAt": "2026-04-20T09:00:00" }
+{ "scheduledAt": "2027-04-20T09:00:00" }
 ```
 
 **Email response (`EmailDTO`):**
@@ -201,9 +209,9 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
   "status": "Opened Multiple Times",
   "openCount": 3,
   "clickCount": 1,
-  "createdAt": "2026-01-01T12:00:00",
-  "lastOpenedAt": "2026-01-02T09:00:00",
-  "lastClickedAt": "2026-01-02T09:01:00"
+  "createdAt": "2027-01-01T12:00:00",
+  "lastOpenedAt": "2027-01-02T09:00:00",
+  "lastClickedAt": "2027-01-02T09:01:00"
 }
 ```
 

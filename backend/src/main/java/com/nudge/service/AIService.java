@@ -243,14 +243,15 @@ public class AIService {
             );
         }
 
-        Object[] row = eventRepo.findBestSendSlot(userEmail);
-        if (row == null || row.length < 3) {
+        List<Object[]> rows = eventRepo.findBestSendSlot(userEmail);
+        if (rows.isEmpty()) {
             return new SendTimeResponse("Insufficient data", null, null, "Not enough data", false);
         }
 
-        int dayOfWeek = ((Number) row[0]).intValue();
-        int hour      = ((Number) row[1]).intValue();
-        long count    = ((Number) row[2]).longValue();
+        Object[] slot = rows.get(0);
+        int  dayOfWeek = ((Number) slot[0]).intValue();
+        int  hour      = ((Number) slot[1]).intValue();
+        long count     = ((Number) slot[2]).longValue();
 
         String dayName   = DayOfWeek.of(dayOfWeek).getDisplayName(TextStyle.FULL, Locale.ENGLISH);
         String hourLabel = formatHour(hour);

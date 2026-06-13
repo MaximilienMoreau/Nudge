@@ -1,6 +1,7 @@
 package com.nudge.controller;
 
 import com.nudge.dto.AuthResponse;
+import com.nudge.dto.DeleteAccountRequest;
 import com.nudge.dto.LoginRequest;
 import com.nudge.dto.PasswordChangeRequest;
 import com.nudge.dto.RegisterRequest;
@@ -77,6 +78,20 @@ public class AuthController {
         authService.logout(principal.getUsername());
         clearAuthCookie(response);
         return ResponseEntity.ok(Map.of("message", "Logged out successfully"));
+    }
+
+    /**
+     * DELETE /api/auth/account — Permanently delete the authenticated account.
+     * Requires the current password in the request body to prevent CSRF-style accidents.
+     */
+    @DeleteMapping("/account")
+    public ResponseEntity<Map<String, String>> deleteAccount(
+            @AuthenticationPrincipal UserDetails principal,
+            @Valid @RequestBody DeleteAccountRequest request,
+            HttpServletResponse response) {
+        authService.deleteAccount(principal.getUsername(), request.password());
+        clearAuthCookie(response);
+        return ResponseEntity.ok(Map.of("message", "Account deleted"));
     }
 
     private void setAuthCookie(HttpServletResponse response, String token) {

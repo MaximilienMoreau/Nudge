@@ -50,24 +50,27 @@ public interface TrackingEventRepository extends JpaRepository<TrackingEvent, Lo
             TrackedEmail email, EventType type);
 
     /**
-     * Aggregate open events by day-of-week and hour directly in the DB.
-     * Returns rows of [dayOfWeek (1=Mon), hour (0-23), count] sorted by count desc.
-     * Replaces loading every open event into memory for send-time analysis.
+     * Returns the single [dayOfWeek, hour, count] row with the most OPEN events for a user.
+     *   col[0] dayOfWeek  — ISO day-of-week int, 1=Monday … 7=Sunday
+     *   col[1] hour       — hour of day 0-23
+     *   col[2] openCount  — number of opens in that slot
+     *
+     * Note: uses CAST(... AS INT) instead of ::INT — Spring JPA interprets ::x as a named parameter.
      */
     @Query(value = """
-        SELECT EXTRACT(ISODOW FROM e.timestamp)::INT AS day_of_week,
-               EXTRACT(HOUR  FROM e.timestamp)::INT AS hour,
-               COUNT(*)                              AS open_count
+        SELECT CAST(EXTRACT(ISODOW FROM e.timestamp) AS INT),
+               CAST(EXTRACT(HOUR  FROM e.timestamp) AS INT),
+               COUNT(*)
         FROM tracking_events e
         JOIN tracked_emails  te ON te.id = e.email_id
         JOIN users           u  ON u.id  = te.user_id
         WHERE u.email = :userEmail
           AND e.type  = 'OPEN'
-        GROUP BY day_of_week, hour
-        ORDER BY open_count DESC
+        GROUP BY 1, 2
+        ORDER BY 3 DESC
         LIMIT 1
         """, nativeQuery = true)
-    Object[] findBestSendSlot(@Param("userEmail") String userEmail);
+    List<Object[]> findBestSendSlot(@Param("userEmail") String userEmail);
 
     /**
      * Count total OPEN events for a user (used by AIService to decide
