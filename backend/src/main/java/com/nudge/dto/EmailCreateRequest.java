@@ -1,5 +1,6 @@
 package com.nudge.dto;
 
+import jakarta.validation.constraints.AssertTrue;
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
@@ -31,4 +32,11 @@ public class EmailCreateRequest {
      * When provided and non-empty, recipientEmail is ignored.
      */
     private List<@Email String> recipientEmails;
+
+    @AssertTrue(message = "At least one recipient email must be provided")
+    public boolean isRecipientProvided() {
+        boolean hasSingle = recipientEmail != null && !recipientEmail.isBlank();
+        boolean hasMulti  = recipientEmails != null && !recipientEmails.isEmpty();
+        return hasSingle || hasMulti;
+    }
 }

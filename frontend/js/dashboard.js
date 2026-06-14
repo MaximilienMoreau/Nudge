@@ -755,7 +755,8 @@ function scoreBar(rawScore) {
   const tooltip = 'Reply Probability Score (0–100). ' +
                   'Based on: open count (up to 40 pts), ' +
                   'recency of last open (up to 40 pts), ' +
-                  'and frequency bonus for repeated opens (up to 20 pts).';
+                  'frequency bonus for repeated opens (up to 20 pts), ' +
+                  'and click bonus (up to 20 pts).';
   return `
     <div class="score-wrap" title="${tooltip}">
       <div class="score-bar-track">

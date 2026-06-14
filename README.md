@@ -1,6 +1,6 @@
 # Nudge: Email Open Tracker
 
-> Get alerted the moment someone opens your email — no reply needed.
+> Get alerted the moment someone opens your email. No reply needed.
 
 Nudge is a **browser extension** (Chrome, Edge) and a **tracking pixel** that notifies you in real-time when a recipient opens an email you sent, without waiting for a reply. It also scores engagement and generates AI-powered follow-ups.
 
@@ -10,8 +10,8 @@ Nudge is a **browser extension** (Chrome, Edge) and a **tracking pixel** that no
 
 ```
 nudge/
-├── backend/          Spring Boot 3 (Java 17) — REST API + WebSocket
-├── frontend/         Vanilla HTML/CSS/JS — Dashboard UI
+├── backend/          Spring Boot 3 (Java 17) / REST API + WebSocket
+├── frontend/         Vanilla HTML/CSS/JS / Dashboard UI
 ├── extension/        Browser Extension (Manifest V3, Chrome & Edge) — Gmail, Outlook, Proton Mail, Infomaniak, Yahoo
 └── database/         PostgreSQL schema / init scripts
 ```
@@ -101,27 +101,27 @@ python3 -m http.server 3000
 
 ### 4. Browser Extension (Chrome or Edge)
 
-The extension uses Manifest V3 and runs on any Chromium-based browser — no code changes needed between Chrome and Edge.
+The extension uses Manifest V3 and runs on any Chromium-based browser. No code changes needed between Chrome and Edge.
 
 **Chrome:**
 1. Go to `chrome://extensions/`
 2. Enable **Developer mode** (top right)
 3. Click **Load unpacked** → select the `/extension` folder
-4. The Nudge icon appears in your toolbar — click it to sign in
+4. The Nudge icon appears in your toolbar. Click it to sign in
 
 **Edge:**
 1. Go to `edge://extensions/`
 2. Enable **Developer mode** (left sidebar)
 3. Click **Load unpacked** → select the `/extension` folder
-4. The Nudge icon appears in your toolbar — click it to sign in
+4. The Nudge icon appears in your toolbar. Click it to sign in
 
-> To publish on the Edge Add-ons store, submit the same `/extension` folder without modification — Edge accepts Chrome Manifest V3 extensions natively.
+> To publish on the Edge Add-ons store, submit the same `/extension` folder without modification. Edge accepts Chrome Manifest V3 extensions natively.
 
 ---
 
 ## API Reference
 
-Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All protected endpoints read the cookie automatically — no `Authorization` header needed from the browser. API clients (e.g. the Chrome extension) may alternatively send `Authorization: Bearer <token>`.
+Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All protected endpoints read the cookie automatically, no `Authorization` header needed from the browser. API clients (e.g. the Chrome extension) may alternatively send `Authorization: Bearer <token>`.
 
 ### Authentication (public)
 
@@ -181,7 +181,7 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
 }
 ```
 
-> `recipientEmails` (array) is preferred. `recipientEmail` (single string) is also accepted for backwards compatibility — when both are present, `recipientEmails` takes precedence.
+> At least one of `recipientEmail` or `recipientEmails` must be provided omitting both returns `400 Bad Request`. `recipientEmails` (array) is preferred. `recipientEmail` (single string) is also accepted for backwards compatibility when both are present, `recipientEmails` takes precedence.
 
 **Response includes:**
 ```json
@@ -279,7 +279,7 @@ Subscribe to: `/user/queue/notifications`
 
 ## Lead Scoring
 
-The Reply Probability Score (0–100) is computed from genuine opens only — bot/proxy pre-fetches (Apple MPP, Google Image Proxy, MS Exchange Safe Links, etc.) are detected and excluded automatically.
+The Reply Probability Score (0–100) is computed from genuine opens only — bot/proxy pre-fetches (Apple MPP, Google Image Proxy, MS Exchange Safe Links, etc.) are detected and excluded automatically. The `openCount` field in the API response follows the same rule: it reflects genuine human opens only.
 
 | Signal              | Points                                      |
 |---------------------|---------------------------------------------|
