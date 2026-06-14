@@ -204,7 +204,7 @@ public class EmailService {
     /** Build the full DTO from the email and its pre-fetched events. */
     private EmailDTO toDTO(TrackedEmail email, List<TrackingEvent> events) {
         List<TrackingEvent> opens = events.stream()
-                .filter(e -> e.getType() == EventType.OPEN)
+                .filter(e -> e.getType() == EventType.OPEN && !e.isSuspectedBot())
                 .collect(Collectors.toList());
         List<TrackingEvent> clicks = events.stream()
                 .filter(e -> e.getType() == EventType.CLICK)
