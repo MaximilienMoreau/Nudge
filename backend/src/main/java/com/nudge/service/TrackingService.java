@@ -87,7 +87,6 @@ public class TrackingService {
             TrackingEvent event = new TrackingEvent();
             event.setEmail(email);
             event.setType(EventType.OPEN);
-            event.setTimestamp(LocalDateTime.now());
             event.setIpAddress(extractIp(request));
             event.setUserAgent(userAgent);
             event.setSuspectedBot(isBot);
@@ -131,7 +130,6 @@ public class TrackingService {
             TrackingEvent event = new TrackingEvent();
             event.setEmail(email);
             event.setType(EventType.CLICK);
-            event.setTimestamp(LocalDateTime.now());
             event.setIpAddress(extractIp(request));
             event.setUserAgent(request.getHeader("User-Agent"));
             eventRepo.save(event);

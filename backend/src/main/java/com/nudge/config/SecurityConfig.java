@@ -86,6 +86,7 @@ public class SecurityConfig {
 
         // Credentials (httpOnly cookie) require explicit origins — wildcards are forbidden by spec.
         // setAllowedOriginPatterns supports wildcards AND works with allowCredentials(true).
+        // allowCredentials IS set to true because the web frontend sends the JWT via an httpOnly cookie.
         List<String> origins = Arrays.stream(corsAllowedOrigins.split(","))
                 .map(String::trim)
                 .filter(s -> !s.isEmpty())

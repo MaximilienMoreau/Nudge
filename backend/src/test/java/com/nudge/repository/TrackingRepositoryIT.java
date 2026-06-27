@@ -125,11 +125,12 @@ class TrackingRepositoryIT {
         email.setArchivedAt(java.time.LocalDateTime.now());
         emailRepo.save(email);
 
-        List<TrackedEmail> archived = emailRepo
-                .findByUserAndArchivedAtIsNotNullOrderByArchivedAtDesc(user);
+        var archived = emailRepo
+                .findByUserAndArchivedAtIsNotNullOrderByArchivedAtDesc(
+                        user, org.springframework.data.domain.Pageable.unpaged());
 
-        assertThat(archived).hasSize(1);
-        assertThat(archived.get(0).getId()).isEqualTo(email.getId());
+        assertThat(archived.getContent()).hasSize(1);
+        assertThat(archived.getContent().get(0).getId()).isEqualTo(email.getId());
     }
 
     // ── TrackingEventRepository ──────────────────────────────────────────────

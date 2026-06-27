@@ -107,6 +107,7 @@ public class EmailService {
     /**
      * Paginated list of active tracked emails for the authenticated user.
      */
+    @Transactional(readOnly = true)
     public Page<EmailDTO> getEmailsForUser(String userEmail, Pageable pageable) {
         User user = userRepo.findByEmail(userEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
@@ -121,6 +122,7 @@ public class EmailService {
     }
 
     /** Retrieve a single email DTO by ID (validates ownership). */
+    @Transactional(readOnly = true)
     public EmailDTO getEmailById(Long emailId, String userEmail) {
         TrackedEmail email = findAndVerify(emailId, userEmail);
         List<TrackingEvent> events = eventRepo.findByEmailOrderByTimestampDesc(email);
@@ -139,15 +141,15 @@ public class EmailService {
         log.info("Email {} archived by {}", emailId, userEmail);
     }
 
-    /** Return all archived emails for the authenticated user. */
-    public List<EmailDTO> getArchivedEmailsForUser(String userEmail) {
+    /** Paginated list of archived emails for the authenticated user. */
+    @Transactional(readOnly = true)
+    public Page<EmailDTO> getArchivedEmailsForUser(String userEmail, Pageable pageable) {
         User user = userRepo.findByEmail(userEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
-        List<TrackedEmail> emails = emailRepo.findByUserAndArchivedAtIsNotNullOrderByArchivedAtDesc(user);
+        Page<TrackedEmail> page = emailRepo.findByUserAndArchivedAtIsNotNullOrderByArchivedAtDesc(user, pageable);
+        List<TrackedEmail> emails = page.getContent();
         Map<Long, List<TrackingEvent>> eventsByEmail = batchFetchEvents(emails);
-        return emails.stream()
-                .map(e -> toDTO(e, eventsByEmail.getOrDefault(e.getId(), List.of())))
-                .collect(Collectors.toList());
+        return page.map(e -> toDTO(e, eventsByEmail.getOrDefault(e.getId(), List.of())));
     }
 
     /** Restore a soft-deleted email (clears archivedAt). */
@@ -205,10 +207,10 @@ public class EmailService {
     private EmailDTO toDTO(TrackedEmail email, List<TrackingEvent> events) {
         List<TrackingEvent> opens = events.stream()
                 .filter(e -> e.getType() == EventType.OPEN && !e.isSuspectedBot())
-                .collect(Collectors.toList());
+                .toList();
         List<TrackingEvent> clicks = events.stream()
                 .filter(e -> e.getType() == EventType.CLICK)
-                .collect(Collectors.toList());
+                .toList();
 
         int openCount  = opens.size();
         int clickCount = clicks.size();

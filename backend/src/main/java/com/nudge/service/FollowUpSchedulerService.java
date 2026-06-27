@@ -6,9 +6,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Slice;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -21,7 +21,6 @@ import java.time.LocalDateTime;
  * After notifying, the scheduledFollowUpAt is cleared so the reminder fires only once.
  */
 @Service
-@EnableScheduling
 public class FollowUpSchedulerService {
 
     private static final Logger log = LoggerFactory.getLogger(FollowUpSchedulerService.class);
@@ -42,6 +41,7 @@ public class FollowUpSchedulerService {
 
     /** Fixed-delay scan; interval configured in application.properties. */
     @Scheduled(fixedDelayString = "${nudge.followup.scheduler.interval-ms:3600000}")
+    @Transactional
     public void checkDueFollowUps() {
         LocalDateTime now = LocalDateTime.now();
         int page = 0;

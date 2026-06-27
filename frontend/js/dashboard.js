@@ -397,14 +397,16 @@ async function archiveEmail(emailId) {
 
 // ── Archived emails ───────────────────────────────────────────
 
-async function loadArchivedEmails() {
+async function loadArchivedEmails(page = 0) {
   const tbody = document.getElementById('archived-tbody');
   tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="spinner"></div></div></td></tr>`;
 
   try {
-    const res = await authFetch('/api/emails/archived');
+    const res = await authFetch(`/api/emails/archived?page=${page}&size=100`);
     if (!res.ok) throw new Error('Failed to load archived emails');
-    const emails = await res.json();
+    const pageData = await res.json();
+    // Handle both paginated {content:[]} and plain array responses
+    const emails = pageData.content ?? pageData;
 
     if (emails.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6">
@@ -431,6 +433,15 @@ async function loadArchivedEmails() {
                   onclick="permanentDeleteEmail(${e.id})">🗑 Delete</button>
         </td>
       </tr>`).join('');
+
+    if (pageData.totalPages > 1) {
+      let html = '<tr><td colspan="6"><div style="display:flex;gap:.5rem;justify-content:center;margin:.5rem 0">';
+      if (page > 0) html += `<button class="btn btn-ghost btn-sm" onclick="loadArchivedEmails(${page-1})">← Prev</button>`;
+      html += `<span style="color:var(--muted);line-height:2">Page ${page+1} / ${pageData.totalPages}</span>`;
+      if (page < pageData.totalPages-1) html += `<button class="btn btn-ghost btn-sm" onclick="loadArchivedEmails(${page+1})">Next →</button>`;
+      html += '</div></td></tr>';
+      tbody.insertAdjacentHTML('beforeend', html);
+    }
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
       <div class="empty-icon">⚠️</div><p style="color:var(--muted)">${escHtml(err.message)}</p>
