@@ -15,11 +15,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
-import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.client.RestClient;
 
 import java.time.DayOfWeek;
+import java.time.LocalDateTime;
 import java.time.format.TextStyle;
 import java.util.List;
 import java.util.Locale;
@@ -77,6 +78,7 @@ public class AIService {
      * @param request  contains only emailId and daysSinceSent
      * @param ownerEmail  the authenticated user's email (for ownership check)
      */
+    @Transactional(readOnly = true)
     public FollowUpResponse generateFollowUp(FollowUpRequest request, String ownerEmail) {
         // Look up real engagement data from the database
         TrackedEmail email = emailRepo.findById(request.getEmailId())
@@ -86,9 +88,15 @@ public class AIService {
             throw new SecurityException("Access denied");
         }
 
-        List<TrackingEvent> events   = eventRepo.findByEmailOrderByTimestampDesc(email);
-        int openCount       = (int) events.stream().filter(e -> e.getType() == EventType.OPEN).count();
-        int engagementScore = leadScoringService.computeScore(events);
+        // Use COUNT queries (O(1)) — mirrors TrackingService hot-path to avoid loading all events
+        long openCountL  = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN);
+        long clickCountL = eventRepo.countByEmailAndType(email, EventType.CLICK);
+        LocalDateTime lastOpen = eventRepo
+                .findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(email, EventType.OPEN)
+                .map(TrackingEvent::getTimestamp)
+                .orElse(null);
+        int openCount       = (int) openCountL;
+        int engagementScore = leadScoringService.computeScore(openCountL, clickCountL, lastOpen);
 
         String decryptedContent;
         try {
@@ -238,6 +246,7 @@ public class AIService {
      * Analyse historical opens via a single SQL aggregation query
      * (GROUP BY day, hour) instead of loading every event into JVM memory.
      */
+    @Transactional(readOnly = true)
     public SendTimeResponse suggestSendTime(String userEmail) {
         long totalOpens = eventRepo.countOpensByUserEmail(userEmail);
 

@@ -6,6 +6,7 @@ import com.nudge.dto.LoginRequest;
 import com.nudge.dto.PasswordChangeRequest;
 import com.nudge.dto.RegisterRequest;
 import com.nudge.service.AuthService;
+import com.nudge.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
@@ -98,7 +99,7 @@ public class AuthController {
     }
 
     private void setAuthCookie(HttpServletResponse response, String token) {
-        ResponseCookie cookie = ResponseCookie.from(com.nudge.security.SecurityConstants.JWT_COOKIE_NAME, token)
+        ResponseCookie cookie = ResponseCookie.from(SecurityConstants.JWT_COOKIE_NAME, token)
                 .httpOnly(true)
                 .secure(cookieSecure)
                 .sameSite("Strict")
@@ -109,7 +110,7 @@ public class AuthController {
     }
 
     private void clearAuthCookie(HttpServletResponse response) {
-        ResponseCookie cookie = ResponseCookie.from(com.nudge.security.SecurityConstants.JWT_COOKIE_NAME, "")
+        ResponseCookie cookie = ResponseCookie.from(SecurityConstants.JWT_COOKIE_NAME, "")
                 .httpOnly(true)
                 .secure(cookieSecure)
                 .sameSite("Strict")

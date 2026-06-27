@@ -16,6 +16,9 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.Map;
 
+// Note: GET /api/emails/archived is declared before /{id} so Spring MVC
+// resolves the literal path before the template — no ambiguity.
+
 /**
  * CRUD for tracked emails. All endpoints require a valid JWT.
  *
@@ -85,12 +88,15 @@ public class EmailController {
 
     /**
      * GET /api/emails/archived
-     * Returns all soft-deleted emails for the authenticated user.
+     * Returns soft-deleted emails for the authenticated user; paginated to prevent OOM.
      */
     @GetMapping("/archived")
-    public ResponseEntity<List<EmailDTO>> listArchivedEmails(
-            @AuthenticationPrincipal UserDetails user) {
-        return ResponseEntity.ok(emailService.getArchivedEmailsForUser(user.getUsername()));
+    public ResponseEntity<Page<EmailDTO>> listArchivedEmails(
+            @AuthenticationPrincipal UserDetails user,
+            @RequestParam(defaultValue = "0")   int page,
+            @RequestParam(defaultValue = "100") int size) {
+        Pageable pageable = PageRequest.of(page, Math.min(size, 200));
+        return ResponseEntity.ok(emailService.getArchivedEmailsForUser(user.getUsername(), pageable));
     }
 
     /**
