@@ -5,7 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
- * Nudge — AI-powered email assistant.
+ * Nudge AI-powered email assistant.
  * Entry point for the Spring Boot application.
  */
 @SpringBootApplication
