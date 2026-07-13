@@ -2,9 +2,11 @@ package com.nudge.config;
 
 import com.nudge.security.JwtAuthFilter;
 import com.nudge.security.RateLimitFilter;
+import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.env.Environment;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.AuthenticationProvider;
@@ -33,7 +35,10 @@ import java.util.List;
  * - Everything else requires a valid JWT
  *
  * CORS locked to origins listed in app.cors.allowed-origins.
- *     allowCredentials is NOT set (we use JWT in Authorization headers, not cookies).
+ *     allowCredentials IS set to true — the web frontend authenticates via
+ *     an httpOnly JWT cookie, so wildcard origins are rejected (see
+ *     corsConfigurationSource(), which uses allowed origin *patterns* so
+ *     credentialed requests still work per-origin).
  * RateLimitFilter runs before the JWT filter.
  */
 @Configuration
@@ -43,6 +48,7 @@ public class SecurityConfig {
     private final JwtAuthFilter jwtAuthFilter;
     private final UserDetailsService userDetailsService;
     private final RateLimitFilter rateLimitFilter;
+    private final Environment environment;
 
     /** Injected from application.properties / env var. No default — app fails fast if not set. */
     @Value("${app.cors.allowed-origins}")
@@ -50,10 +56,31 @@ public class SecurityConfig {
 
     public SecurityConfig(JwtAuthFilter jwtAuthFilter,
                           UserDetailsService userDetailsService,
-                          RateLimitFilter rateLimitFilter) {
+                          RateLimitFilter rateLimitFilter,
+                          Environment environment) {
         this.jwtAuthFilter    = jwtAuthFilter;
         this.userDetailsService = userDetailsService;
         this.rateLimitFilter  = rateLimitFilter;
+        this.environment      = environment;
+    }
+
+    /**
+     * Fail fast on startup if the prod profile is active with a wildcard CORS
+     * origin — allowCredentials(true) + "*" would let any origin make
+     * credentialed (cookie-bearing) requests against a production deployment.
+     */
+    @PostConstruct
+    void validateCorsConfig() {
+        boolean isProd = Arrays.asList(environment.getActiveProfiles()).contains("prod");
+        boolean hasWildcard = Arrays.stream(corsAllowedOrigins.split(","))
+                .map(String::trim)
+                .anyMatch("*"::equals);
+        if (isProd && hasWildcard) {
+            throw new IllegalStateException(
+                    "app.cors.allowed-origins is '*' while the 'prod' profile is active. " +
+                    "Combined with allowCredentials(true), this would allow any origin to make " +
+                    "credentialed requests. Set CORS_ALLOWED_ORIGINS to an explicit origin list.");
+        }
     }
 
     @Bean

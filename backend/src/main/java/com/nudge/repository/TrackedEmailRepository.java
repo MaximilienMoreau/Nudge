@@ -8,7 +8,6 @@ import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
-import java.util.List;
 import java.util.Optional;
 
 @Repository
@@ -19,9 +18,6 @@ public interface TrackedEmailRepository extends JpaRepository<TrackedEmail, Long
      * Pageable support for large lists.
      */
     Page<TrackedEmail> findByUserAndArchivedAtIsNullOrderByCreatedAtDesc(User user, Pageable pageable);
-
-    /** Unpaged version — used by scheduler. */
-    List<TrackedEmail> findByUserAndArchivedAtIsNullOrderByCreatedAtDesc(User user);
 
     /**
      * Find emails where a follow-up was scheduled and not yet archived.
