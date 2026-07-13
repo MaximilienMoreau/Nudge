@@ -16,7 +16,9 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
 
 import java.time.DayOfWeek;
@@ -54,19 +56,23 @@ public class AIService {
     private final EncryptionService       encryptionService;
     private final RestClient              restClient;     // injected bean
     private final ObjectMapper            objectMapper;   // injected bean
+    private final TransactionTemplate     readOnlyTransaction;
 
     public AIService(TrackingEventRepository eventRepo,
                      TrackedEmailRepository emailRepo,
                      LeadScoringService leadScoringService,
                      EncryptionService encryptionService,
                      RestClient restClient,
-                     ObjectMapper objectMapper) {
+                     ObjectMapper objectMapper,
+                     PlatformTransactionManager transactionManager) {
         this.eventRepo         = eventRepo;
         this.emailRepo         = emailRepo;
         this.leadScoringService = leadScoringService;
         this.encryptionService  = encryptionService;
         this.restClient        = restClient;
         this.objectMapper       = objectMapper;
+        this.readOnlyTransaction = new TransactionTemplate(transactionManager);
+        this.readOnlyTransaction.setReadOnly(true);
     }
 
     /**
@@ -75,46 +81,15 @@ public class AIService {
      * openCount and engagementScore are computed server-side from the DB
      *     to prevent client-supplied value tampering.
      *
+     * DB reads happen in a short-lived transaction (loadContext) that closes
+     *     before the blocking OpenAI HTTP call, so a slow/hanging OpenAI
+     *     response cannot hold a pooled DB connection open.
+     *
      * @param request  contains only emailId and daysSinceSent
      * @param ownerEmail  the authenticated user's email (for ownership check)
      */
-    @Transactional(readOnly = true)
     public FollowUpResponse generateFollowUp(FollowUpRequest request, String ownerEmail) {
-        // Look up real engagement data from the database
-        TrackedEmail email = emailRepo.findById(request.getEmailId())
-                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + request.getEmailId()));
-
-        if (!email.getUser().getEmail().equals(ownerEmail)) {
-            throw new SecurityException("Access denied");
-        }
-
-        // Use COUNT queries (O(1)) — mirrors TrackingService hot-path to avoid loading all events
-        long openCountL  = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN);
-        long clickCountL = eventRepo.countByEmailAndType(email, EventType.CLICK);
-        LocalDateTime lastOpen = eventRepo
-                .findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(email, EventType.OPEN)
-                .map(TrackingEvent::getTimestamp)
-                .orElse(null);
-        int openCount       = (int) openCountL;
-        int engagementScore = leadScoringService.computeScore(openCountL, clickCountL, lastOpen);
-
-        String decryptedContent;
-        try {
-            decryptedContent = encryptionService.decrypt(email.getContent());
-        } catch (IllegalStateException e) {
-            log.warn("Could not decrypt content for email id={} — generating follow-up without body", email.getId());
-            decryptedContent = null;
-        }
-
-        // Build an enriched internal request
-        InternalFollowUpContext ctx = new InternalFollowUpContext(
-                email.getSubject(),
-                decryptedContent,
-                email.getRecipientEmail(),
-                request.getDaysSinceSent(),
-                openCount,
-                engagementScore
-        );
+        InternalFollowUpContext ctx = readOnlyTransaction.execute(status -> loadContext(request, ownerEmail));
 
         if (apiKey == null || apiKey.isBlank()) {
             log.warn("OpenAI API key not configured — returning placeholder follow-up");
@@ -145,6 +120,43 @@ public class AIService {
             log.error("OpenAI API call failed: {}", e.getMessage());
             return buildFallback(ctx);
         }
+    }
+
+    /** Loads the email, verifies ownership, and computes engagement data — runs inside a DB transaction. */
+    private InternalFollowUpContext loadContext(FollowUpRequest request, String ownerEmail) {
+        TrackedEmail email = emailRepo.findById(request.getEmailId())
+                .orElseThrow(() -> new IllegalArgumentException("Email not found: " + request.getEmailId()));
+
+        if (!email.getUser().getEmail().equals(ownerEmail)) {
+            throw new SecurityException("Access denied");
+        }
+
+        // Use COUNT queries (O(1)) — mirrors TrackingService hot-path to avoid loading all events
+        long openCountL  = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN);
+        long clickCountL = eventRepo.countByEmailAndType(email, EventType.CLICK);
+        LocalDateTime lastOpen = eventRepo
+                .findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(email, EventType.OPEN)
+                .map(TrackingEvent::getTimestamp)
+                .orElse(null);
+        int openCount       = (int) openCountL;
+        int engagementScore = leadScoringService.computeScore(openCountL, clickCountL, lastOpen);
+
+        String decryptedContent;
+        try {
+            decryptedContent = encryptionService.decrypt(email.getContent());
+        } catch (IllegalStateException e) {
+            log.warn("Could not decrypt content for email id={} — generating follow-up without body", email.getId());
+            decryptedContent = null;
+        }
+
+        return new InternalFollowUpContext(
+                email.getSubject(),
+                decryptedContent,
+                email.getRecipientEmail(),
+                request.getDaysSinceSent(),
+                openCount,
+                engagementScore
+        );
     }
 
     // ── Prompt builders ──────────────────────────────────────────────────────

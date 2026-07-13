@@ -1,5 +1,6 @@
 package com.nudge.dto;
 
+import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
@@ -16,5 +17,6 @@ public class FollowUpRequest {
     private Long emailId;
 
     /** Days since the email was first sent (computed client-side from createdAt). */
+    @Min(value = 0, message = "daysSinceSent cannot be negative")
     private int daysSinceSent;
 }

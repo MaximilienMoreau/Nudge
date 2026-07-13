@@ -21,7 +21,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class RateLimitFilterTest {
 
-    private static final String LOGIN_PATH = "/api/auth/login";
+    private static final String LOGIN_PATH    = "/api/auth/login";
+    private static final String REGISTER_PATH = "/api/auth/register";
 
     private RateLimitFilter filter;
 
@@ -32,6 +33,56 @@ class RateLimitFilterTest {
     }
 
     // ── rate limiting ─────────────────────────────────────────────────────
+
+    @Test
+    void allowsRequests_belowLimit_forRegister() throws Exception {
+        for (int i = 0; i < 5; i++) {
+            MockHttpServletResponse resp = doPost(REGISTER_PATH, "7.7.7.1", null);
+            assertThat(resp.getStatus()).isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+        }
+    }
+
+    @Test
+    void blocks_request_whenRegisterLimitExceeded() throws Exception {
+        // Exhaust the 5-request register limit
+        for (int i = 0; i < 5; i++) {
+            doPost(REGISTER_PATH, "7.7.7.2", null);
+        }
+        // 6th request must be blocked
+        MockHttpServletResponse resp = doPost(REGISTER_PATH, "7.7.7.2", null);
+        assertThat(resp.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    @Test
+    void registerLimit_isTrackedSeparatelyFromLoginLimit() throws Exception {
+        // Exhaust the login bucket for this IP
+        for (int i = 0; i < 10; i++) {
+            doPost(LOGIN_PATH, "7.7.7.3", null);
+        }
+        // The register bucket for the same IP must be unaffected
+        MockHttpServletResponse resp = doPost(REGISTER_PATH, "7.7.7.3", null);
+        assertThat(resp.getStatus()).isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    @Test
+    void blocks_trackOpen_whenPerTrackingIdLimitExceeded() throws Exception {
+        // /track/open is keyed on the tracking ID, not the caller IP — a different
+        // IP per request must not reset the bucket (prevents open-count inflation).
+        for (int i = 0; i < 30; i++) {
+            doGet("/track/open/shared-tracking-id", "8.8.8." + i);
+        }
+        MockHttpServletResponse resp = doGet("/track/open/shared-tracking-id", "8.8.8.99");
+        assertThat(resp.getStatus()).isEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
+
+    @Test
+    void trackOpen_limitIsPerTrackingId_doesNotAffectOtherTrackingIds() throws Exception {
+        for (int i = 0; i < 30; i++) {
+            doGet("/track/open/tracking-id-a", "9.9.9.1");
+        }
+        MockHttpServletResponse resp = doGet("/track/open/tracking-id-b", "9.9.9.1");
+        assertThat(resp.getStatus()).isNotEqualTo(HttpStatus.TOO_MANY_REQUESTS.value());
+    }
 
     @Test
     void allowsRequests_belowLimit() throws Exception {
@@ -111,6 +162,14 @@ class RateLimitFilterTest {
     private MockHttpServletResponse doPost(String path, String remoteAddr, String xff)
             throws Exception {
         return doPostWith(filter, path, remoteAddr, xff);
+    }
+
+    private MockHttpServletResponse doGet(String path, String remoteAddr) throws Exception {
+        MockHttpServletRequest req = new MockHttpServletRequest("GET", path);
+        req.setRemoteAddr(remoteAddr);
+        MockHttpServletResponse resp = new MockHttpServletResponse();
+        filter.doFilter(req, resp, new MockFilterChain());
+        return resp;
     }
 
     private MockHttpServletResponse doPostWith(RateLimitFilter f, String path,

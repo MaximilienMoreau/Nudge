@@ -18,7 +18,7 @@ Nudge is a **browser extension** (Chrome & Edge) paired with a self-hosted backe
 | **Bot detection** | Filters Apple MPP, Google Image Proxy, Exchange Safe Links, Proofpoint, and more |
 | **Email notifications** | SMTP fallback when no WebSocket session is active |
 | **Content encryption** | Email bodies stored with AES-256-GCM; key rotation supported |
-| **Rate limiting** | Built-in per-IP rate limiter on all API endpoints |
+| **Rate limiting** | Token-bucket rate limiter on login, register, and pixel/click tracking endpoints |
 | **Multi-recipient** | Track multiple recipients per email, one pixel per recipient |
 | **Archive & restore** | Soft-delete emails; restore or permanently delete from the archive |
 
@@ -287,7 +287,7 @@ Embed in emails:
 
 ### WebSocket
 
-Connect to `ws://localhost:8080/ws` using SockJS + STOMP.
+Connect to `http://localhost:8080/ws` using SockJS + STOMP (SockJS takes an `http(s)://` endpoint, not `ws://`, and negotiates the WebSocket upgrade internally).
 
 The server authenticates via the `nudge_jwt` httpOnly cookie sent automatically by the browser on the SockJS handshake — no explicit token parameter needed.
 
