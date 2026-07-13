@@ -31,6 +31,7 @@ public class EmailCreateRequest {
      * Multiple recipients — each gets its own unique trackingId.
      * When provided and non-empty, recipientEmail is ignored.
      */
+    @Size(max = 50, message = "At most 50 recipients per request")
     private List<@Email String> recipientEmails;
 
     @AssertTrue(message = "At least one recipient email must be provided")
