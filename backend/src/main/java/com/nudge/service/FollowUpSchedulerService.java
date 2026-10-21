@@ -53,18 +53,17 @@ public class FollowUpSchedulerService {
     @Scheduled(fixedDelayString = "${nudge.followup.scheduler.interval-ms:3600000}")
     public void checkDueFollowUps() {
         LocalDateTime now = LocalDateTime.now();
-        int page = 0;
+        long lastId = 0;
         Slice<TrackedEmail> slice;
 
         do {
-            int currentPage = page++;
+            long afterId = lastId;
             slice = transactionTemplate.execute(status -> emailRepo
-                    .findByScheduledFollowUpAtIsNotNullAndArchivedAtIsNull(PageRequest.of(currentPage, BATCH_SIZE)));
+                    .findByScheduledFollowUpAtLessThanEqualAndArchivedAtIsNullAndIdGreaterThanOrderByIdAsc(
+                            now, afterId, PageRequest.of(0, BATCH_SIZE)));
 
             for (TrackedEmail email : slice.getContent()) {
-                if (email.getScheduledFollowUpAt() == null || email.getScheduledFollowUpAt().isAfter(now)) {
-                    continue; // Not due yet
-                }
+                lastId = email.getId();
                 processDueFollowUp(email, now);
             }
         } while (slice.hasNext());
@@ -72,8 +71,8 @@ public class FollowUpSchedulerService {
 
     private void processDueFollowUp(TrackedEmail email, LocalDateTime now) {
         try {
-            // Resolve the lazy owner association inside a short transaction
-            String ownerEmail = transactionTemplate.execute(status -> email.getUser().getEmail());
+            // The repository fetches the owner before the read transaction closes.
+            String ownerEmail = email.getUser().getEmail();
             log.info("Follow-up reminder due for email '{}' (owner: {})", email.getSubject(), ownerEmail);
 
             // Push real-time WebSocket notification
@@ -92,8 +91,13 @@ public class FollowUpSchedulerService {
 
             // Clear the reminder so it fires only once — only after sending succeeded
             transactionTemplate.executeWithoutResult(status -> {
-                email.setScheduledFollowUpAt(null);
-                emailRepo.save(email);
+                emailRepo.findById(email.getId()).ifPresent(current -> {
+                    // Preserve a new schedule or other edits made while sending.
+                    if (email.getScheduledFollowUpAt().equals(current.getScheduledFollowUpAt())) {
+                        current.setScheduledFollowUpAt(null);
+                        emailRepo.save(current);
+                    }
+                });
             });
         } catch (Exception e) {
             log.error("Failed to process follow-up reminder for email id={}: {}", email.getId(), e.getMessage());

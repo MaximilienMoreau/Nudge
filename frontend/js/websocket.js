@@ -55,10 +55,14 @@ function onError(err) {
 async function handleNotification(notification) {
   const { type, emailId, subject, recipientEmail, openCount, leadScore } = notification;
 
-  if (type === 'EMAIL_OPENED') {
+  if (type === 'EMAIL_OPENED' || type === 'EMAIL_CLICKED') {
     const isHot = leadScore >= HOT_LEAD_THRESHOLD;
-    const title = isHot ? '🔥 Hot Lead!' : '📬 Email Opened';
-    const msg   = `"${subject}" opened by ${recipientEmail} (${openCount}x, score: ${leadScore})`;
+    const title = type === 'EMAIL_CLICKED'
+      ? '🔗 Link Clicked'
+      : isHot ? '🔥 Hot Lead!' : '📬 Email Opened';
+    const msg = type === 'EMAIL_CLICKED'
+      ? `Link in "${subject}" clicked by ${recipientEmail} (score: ${leadScore})`
+      : `"${subject}" opened by ${recipientEmail} (${openCount}x, score: ${leadScore})`;
 
     if (typeof showToast === 'function') {
       showToast(title, msg, isHot ? 'success' : 'info');
