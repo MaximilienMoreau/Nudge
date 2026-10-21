@@ -31,7 +31,7 @@ nudge/
 ├── backend/      Spring Boot 3.2 (Java 17) (REST API + WebSocket)
 ├── frontend/     Vanilla HTML/CSS/JS (Dashboard UI)
 ├── extension/    Browser Extension v1.2.0 (Manifest V3, Chrome & Edge)
-└── database/     PostgreSQL schema + Flyway migration scripts
+└── database/     Standalone PostgreSQL schema (Flyway scripts are in backend/src/main/resources/db/migration/)
 ```
 
 **Two ways to track an email:**
@@ -63,7 +63,13 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The API and frontend are available at `http://localhost:8080`.
+The API is available at `http://localhost:8080`. The current Docker image contains only the backend; serve the dashboard separately from the repository root:
+
+```bash
+python3 -m http.server 3000 -d frontend/
+```
+
+Open `http://localhost:3000`. Set `CORS_ALLOWED_ORIGINS=http://localhost:3000` in `.env` before starting the containers to allow the dashboard to access the API.
 
 ### Option B: Local (bare metal)
 
@@ -90,7 +96,7 @@ export OPENAI_API_KEY=sk-...
 mvn spring-boot:run
 ```
 
-The `dev` profile is active by default. It supplies safe local defaults for `JWT_SECRET` and `ENCRYPTION_KEY` — no manual configuration is needed for local development. Flyway runs the migration scripts automatically on startup.
+The `dev` profile is active by default. It supplies safe local defaults for `JWT_SECRET` and `ENCRYPTION_KEY` — no manual configuration is needed for local development. In this profile, Hibernate creates or updates the tables and Flyway is disabled. The `prod` profile runs Flyway migrations and validates the schema.
 
 The API and frontend both start at `http://localhost:8080`.
 
@@ -124,11 +130,13 @@ python3 -m http.server 3000 -d frontend/
 
 ## Environment Variables
 
-All secrets are supplied via environment variables. Copy `.env.example` to `.env` before deploying.
+All secrets are supplied via environment variables. Copy `.env.example` to `.env` before deploying with Docker Compose. For a local Maven run, export the variables in your shell; Spring Boot does not automatically load the root `.env` file.
+
+Docker Compose forwards only the variables listed in its backend `environment` section. Add any additional settings there when needed, including `COOKIE_SECURE`, `TRUSTED_PROXY_RANGES`, key rotation variables, and `FOLLOWUP_SCHEDULER_INTERVAL_MS`.
 
 | Variable | Default | Description |
 |---|---|---|
-| `DB_URL` | `localhost:5432/nudge` | PostgreSQL JDBC URL |
+| `DB_URL` | `jdbc:postgresql://localhost:5432/nudge` | PostgreSQL JDBC URL |
 | `DB_USERNAME` | `postgres` | Database user |
 | `DB_PASSWORD` | *(required)* | Database password |
 | `JWT_SECRET` | *(dev default)* | Base64-encoded 32-byte key — **change for production** |
@@ -136,11 +144,11 @@ All secrets are supplied via environment variables. Copy `.env.example` to `.env
 | `ENCRYPTION_KEY_V2` | *(empty)* | Optional second key for seamless key rotation |
 | `ENCRYPTION_ACTIVE_KEY_VERSION` | `v1` | Which key version to use for new writes |
 | `APP_BASE_URL` | `http://localhost:8080` | Public-facing URL (used in tracking pixel URLs) |
-| `CORS_ALLOWED_ORIGINS` | `http://localhost:8080` | Comma-separated allowed CORS origins |
+| `CORS_ALLOWED_ORIGINS` | `http://localhost:8080,http://localhost:3000` | Comma-separated allowed CORS origins; dev uses `*`, Compose defaults to `http://localhost:8080` |
 | `COOKIE_SECURE` | `false` | Adds `Secure` flag to JWT cookie — set `true` in production (requires HTTPS) |
 | `TRUSTED_PROXY_RANGES` | `127.0.0.1,::1` | CIDR ranges of trusted proxies (for `X-Forwarded-For`) |
 | `OPENAI_API_KEY` | *(empty)* | OpenAI key — falls back to template text without it |
-| `NOTIFICATION_EMAIL_ENABLED` | `false` dev / `true` prod | Enable SMTP email notification fallback |
+| `NOTIFICATION_EMAIL_ENABLED` | `false` dev / `true` prod / `false` Compose | Enable SMTP email notification fallback |
 | `MAIL_HOST` | `smtp.gmail.com` | SMTP server host |
 | `MAIL_PORT` | `587` | SMTP server port |
 | `MAIL_USERNAME` | *(empty)* | SMTP username |
@@ -173,8 +181,10 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
 
 **POST `/api/auth/register` and `/api/auth/login` body:**
 ```json
-{ "email": "you@example.com", "password": "secret" }
+{ "email": "you@example.com", "password": "ExamplePass1!" }
 ```
+
+> Registration requires at least 8 characters, including an uppercase letter and a number or special character.
 
 **DELETE `/api/auth/account` body:**
 ```json
@@ -349,7 +359,7 @@ Two complementary heuristics filter non-human opens before scoring or notificati
 
 2. **Rapid-succession timing**: two opens on the same tracking ID within 30 seconds → the second is flagged as a suspected pre-fetch.
 
-The first open for any tracking ID is never auto-flagged. Flagged events are stored with `suspectedBot = true` and excluded from lead scores and real-time notifications.
+The timing heuristic does not flag the first open for a tracking ID, but a known bot User-Agent can flag any open, including the first. Flagged events are stored with `suspectedBot = true` and excluded from lead scores and real-time notifications.
 
 ---
 

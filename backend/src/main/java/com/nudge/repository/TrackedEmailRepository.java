@@ -6,6 +6,9 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.EntityGraph;
+
+import java.time.LocalDateTime;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
@@ -20,10 +23,13 @@ public interface TrackedEmailRepository extends JpaRepository<TrackedEmail, Long
     Page<TrackedEmail> findByUserAndArchivedAtIsNullOrderByCreatedAtDesc(User user, Pageable pageable);
 
     /**
-     * Find emails where a follow-up was scheduled and not yet archived.
-     * Pageable variant prevents loading unbounded results in the scheduler.
+     * Find due, active reminders after the last processed ID.
+     * A stable cursor avoids skipping rows as sent reminders are cleared.
+     * Fetch the owner so notification delivery can run outside the transaction.
      */
-    Slice<TrackedEmail> findByScheduledFollowUpAtIsNotNullAndArchivedAtIsNull(Pageable pageable);
+    @EntityGraph(attributePaths = "user")
+    Slice<TrackedEmail> findByScheduledFollowUpAtLessThanEqualAndArchivedAtIsNullAndIdGreaterThanOrderByIdAsc(
+            LocalDateTime dueAt, Long afterId, Pageable pageable);
 
     /** Paginated archived emails for a user, most recently archived first. */
     Page<TrackedEmail> findByUserAndArchivedAtIsNotNullOrderByArchivedAtDesc(User user, Pageable pageable);
