@@ -11,7 +11,7 @@ Nudge is a **browser extension** (Chrome & Edge) paired with a self-hosted backe
 | | |
 |---|---|
 | **Real-time notifications** | WebSocket push the moment an email is opened or a link clicked |
-| **Lead scoring** | Reply Probability Score (0–100) based on opens, recency, frequency, and clicks |
+| **Lead scoring** | Estimated Engagement Score (0–100) based on opens, recency, frequency, and clicks |
 | **AI follow-ups** | GPT-4o-mini generates a personalized follow-up draft |
 | **Best send time** | AI analysis of historical open data to suggest the optimal day & hour |
 | **Follow-up scheduler** | Schedule a reminder; notified via WebSocket + email when due |
@@ -19,7 +19,7 @@ Nudge is a **browser extension** (Chrome & Edge) paired with a self-hosted backe
 | **Email notifications** | SMTP fallback when no WebSocket session is active |
 | **Content encryption** | Email bodies stored with AES-256-GCM; key rotation supported |
 | **Rate limiting** | Token-bucket rate limiter on login, register, and pixel/click tracking endpoints |
-| **Multi-recipient** | Track multiple recipients per email, one pixel per recipient |
+| **Recipient tracking** | Reliable attribution for a single recipient; API batch creation supports separate sends |
 | **Archive & restore** | Soft-delete emails; restore or permanently delete from the archive |
 
 ---
@@ -28,9 +28,9 @@ Nudge is a **browser extension** (Chrome & Edge) paired with a self-hosted backe
 
 ```
 nudge/
-├── backend/      Spring Boot 3.2 (Java 17) (REST API + WebSocket)
+├── backend/      Spring Boot 4.1 (Java 17) (REST API + WebSocket)
 ├── frontend/     Vanilla HTML/CSS/JS (Dashboard UI)
-├── extension/    Browser Extension v1.2.0 (Manifest V3, Chrome & Edge)
+├── extension/    Browser Extension v1.3.0 (Manifest V3, Chrome & Edge)
 └── database/     Standalone PostgreSQL schema (Flyway scripts are in backend/src/main/resources/db/migration/)
 ```
 
@@ -63,13 +63,9 @@ cp .env.example .env
 docker compose up -d
 ```
 
-The API is available at `http://localhost:8080`. The current Docker image contains only the backend; serve the dashboard separately from the repository root:
-
-```bash
-python3 -m http.server 3000 -d frontend/
-```
-
-Open `http://localhost:3000`. Set `CORS_ALLOWED_ORIGINS=http://localhost:3000` in `.env` before starting the containers to allow the dashboard to access the API.
+The API and bundled dashboard are available at `http://localhost:8080`. No separate
+frontend server is required. The image exposes a public `/actuator/health` endpoint
+without database details.
 
 ### Option B: Local (bare metal)
 
@@ -132,7 +128,7 @@ python3 -m http.server 3000 -d frontend/
 
 All secrets are supplied via environment variables. Copy `.env.example` to `.env` before deploying with Docker Compose. For a local Maven run, export the variables in your shell; Spring Boot does not automatically load the root `.env` file.
 
-Docker Compose forwards only the variables listed in its backend `environment` section. Add any additional settings there when needed, including `COOKIE_SECURE`, `TRUSTED_PROXY_RANGES`, key rotation variables, and `FOLLOWUP_SCHEDULER_INTERVAL_MS`.
+Docker Compose forwards authentication cookie settings, trusted proxy ranges, key rotation settings, SMTP settings and the scheduler interval.
 
 | Variable | Default | Description |
 |---|---|---|
@@ -146,6 +142,7 @@ Docker Compose forwards only the variables listed in its backend `environment` s
 | `APP_BASE_URL` | `http://localhost:8080` | Public-facing URL (used in tracking pixel URLs) |
 | `CORS_ALLOWED_ORIGINS` | `http://localhost:8080,http://localhost:3000` | Comma-separated allowed CORS origins; dev uses `*`, Compose defaults to `http://localhost:8080` |
 | `COOKIE_SECURE` | `false` | Adds `Secure` flag to JWT cookie — set `true` in production (requires HTTPS) |
+| `COOKIE_SAME_SITE` | `Strict` | `Strict`, `Lax` or `None`; cross-site hosting needs `None` and `COOKIE_SECURE=true`. Cookie writes validate the request origin. |
 | `TRUSTED_PROXY_RANGES` | `127.0.0.1,::1` | CIDR ranges of trusted proxies (for `X-Forwarded-For`) |
 | `OPENAI_API_KEY` | *(empty)* | OpenAI key — falls back to template text without it |
 | `NOTIFICATION_EMAIL_ENABLED` | `false` dev / `true` prod / `false` Compose | Enable SMTP email notification fallback |
@@ -218,7 +215,14 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
 | DELETE | `/api/emails/{id}/permanent` | Permanently delete an email and all its events |
 | POST | `/api/emails/{id}/schedule` | Schedule a follow-up reminder |
 
-**GET `/api/emails` query params:** `?page=0&size=50` (max 200 per page)
+**GET `/api/emails` query params:** `?page=0&size=50&search=&sort=createdAt&ascending=false`
+(max 200 per page). Search and sorting apply across the complete active mailbox.
+Sort fields: `subject`, `recipientEmail`, `createdAt`, `status`, `leadScore`,
+`lastOpenedAt`, `clickCount`, `openCount`, `archivedAt`.
+
+`GET /api/emails/stats` returns global active-mailbox `total`, `opened`, `hot` and
+`average` counters, independently of the current search or page. List responses omit
+the decrypted body; request `GET /api/emails/{id}` for content.
 
 **POST `/api/emails` body:**
 ```json
@@ -229,7 +233,11 @@ Authentication uses an **httpOnly cookie** (`nudge_jwt`) set on login. All prote
 }
 ```
 
-> `recipientEmails` (array, preferred) or `recipientEmail` (single string, backwards-compatible). At least one is required. Returns one `EmailDTO` per recipient.
+> `recipientEmails` (batch creation) or `recipientEmail` (single string). At least
+> one is required. Returns one `EmailDTO` per recipient. For attribution, send each
+> recipient a separate email containing only their pixel. A shared multi-recipient
+> message cannot identify its reader. The extension permits one recipient while
+> tracking is enabled; turn tracking off to send a group email.
 
 **POST `/api/emails/{id}/schedule` body:**
 ```json
@@ -308,7 +316,7 @@ Subscribe to: `/user/queue/notifications`
 | Type | Trigger |
 |------|---------|
 | `EMAIL_OPENED` | A genuine (non-bot) open event is recorded |
-| `EMAIL_CLICKED` | A click event is recorded |
+| `EMAIL_CLICKED` | A non-bot click event is recorded |
 | `FOLLOW_UP_REMINDER` | A scheduled follow-up reminder becomes due |
 
 **Payload:**
@@ -328,7 +336,7 @@ Subscribe to: `/user/queue/notifications`
 
 ## Lead Scoring
 
-The **Reply Probability Score** (0–100) is computed from genuine opens only — bot and proxy pre-fetches are detected and excluded automatically (see [Bot Detection](#bot-detection)). The `openCount` field in the API response follows the same rule.
+The **Estimated Engagement Score** (0–100) uses opens and clicks that were not flagged by the bot heuristics — known bot and proxy pre-fetches are excluded automatically (see [Bot Detection](#bot-detection)). The `openCount` field in the API response follows the same rule.
 
 | Signal | Points |
 |--------|--------|
@@ -390,7 +398,7 @@ Email bodies are encrypted at rest using **AES-256-GCM** before being stored in 
 1. Sign in via the popup with your Nudge account credentials
 2. Open Gmail, Outlook, Proton Mail, Infomaniak, or Yahoo Mail and compose a new email
 3. A **"📨 Nudge: ON"** button appears next to the Send button
-4. Click Send: Nudge registers the email and injects the tracking pixel automatically
+4. Click Send: Nudge pauses sending, registers the email, injects the pixel, then resumes sending. If preparation fails, the draft stays open; retry or disable tracking
 5. The moment the recipient opens your email, you get an instant notification
 
 ### Without the extension (any email client)
@@ -414,7 +422,7 @@ Email bodies are encrypted at rest using **AES-256-GCM** before being stored in 
 - [ ] Set `OPENAI_API_KEY` for AI follow-ups
 - [ ] Set `NOTIFICATION_EMAIL_ENABLED=true` and configure SMTP credentials
 - [ ] Configure a real database with proper credentials
-- [ ] Update the extension `DEFAULT_API_BASE` to point to your production backend
+- [ ] Set the production server in the extension popup and grant access when prompted
 - [ ] Replace in-memory rate limiter with Redis + Bucket4j for multi-instance deployments
 
 See [PRODUCTION.md](PRODUCTION.md) for Docker Compose setup, extension production configuration, and WebSocket broker upgrade instructions.
@@ -425,12 +433,34 @@ See [PRODUCTION.md](PRODUCTION.md) for Docker Compose setup, extension productio
 
 | Layer | Technology |
 |-------|-----------|
-| Backend | Java 17, Spring Boot 3.2 |
+| Backend | Java 17, Spring Boot 4.1 |
 | Database | PostgreSQL 16 + Spring Data JPA + Flyway |
-| Auth | JWT (jjwt 0.11.5) + BCrypt |
+| Auth | JWT (jjwt 0.13.0) + BCrypt |
 | Encryption | AES-256-GCM (versioned key envelope) |
 | Real-time | WebSocket + STOMP + SockJS |
 | AI | OpenAI `gpt-4o-mini` via REST |
 | Frontend | HTML5 + CSS3 + Vanilla JS |
-| Extension | Manifest V3 v1.2.0 (Chrome & Edge) |
+| Extension | Manifest V3 v1.3.0 (Chrome & Edge) |
 | Deployment | Docker + Docker Compose |
+
+## Verification
+
+```bash
+mvn -f backend/pom.xml verify
+node --test scripts/*.test.mjs
+```
+
+`verify` runs unit tests and PostgreSQL repository tests via Testcontainers when Docker
+is available. To also run full HTTP, Flyway schema-validation and dashboard aggregation
+tests, provide a dedicated disposable database:
+
+```bash
+NUDGE_TEST_DB_URL=jdbc:postgresql://localhost:5432/nudge_test \
+NUDGE_TEST_DB_USERNAME=nudge_test NUDGE_TEST_DB_PASSWORD=nudge_test \
+mvn -f backend/pom.xml verify
+```
+
+Never point integration tests at a production database. GitHub Actions runs these
+checks and builds the Docker image. Browser-extension tests cover send sequencing,
+backend failure, duplicate clicks, multiple recipients and draft changes; actual
+Gmail/Outlook/Proton/Infomaniak/Yahoo DOM compatibility still requires browser checks.

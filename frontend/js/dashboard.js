@@ -5,12 +5,12 @@
  * handleTrackEmail and handleModalTrack share submitTrackEmail().
  *  "Copy HTML" button with one-click clipboard copy.
  *  alert() replaced everywhere with showToast().
- *  Client-side search + sortable columns on the email table.
+ *  Search, sorting and statistics cover the complete mailbox through the API.
  *  Score bar has a tooltip explaining the scoring factors.
  *  "Pro Plan" sidebar text shows the account creation date instead.
  *  Follow-up modal cannot be closed while generation is in progress.
  *  Warning banner shown when the AI response is the fallback placeholder.
- *  WebSocket notifications patch only the affected table row, no full reload.
+ *  WebSocket notifications refresh the current page and statistics.
  */
 
 // ── Auth guard ────────────────────────────────────────────────
@@ -28,6 +28,10 @@ let allEmails    = [];       // all emails from the last load
 let filteredEmails = [];     // after search/filter
 let followUpEmail = null;    // context for AI modal
 let sortState     = { col: null, asc: true };
+let currentPage = 0;
+let searchQuery = '';
+let searchTimer;
+let listRequest = 0;
 let isGenerating  = false;   // guard modal close during generation
 
 // ── Init ──────────────────────────────────────────────────────
@@ -75,24 +79,29 @@ function showView(name) {
 
 async function loadEmails(page = 0) {
   const tbody = document.getElementById('emails-tbody');
+  const requestId = ++listRequest;
   tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="spinner"></div></div></td></tr>`;
 
   try {
-    const res = await authFetch(`/api/emails?page=${page}&size=50`);
+    const params = new URLSearchParams({ page, size: 50, search: searchQuery,
+      sort: sortState.col || 'createdAt', ascending: sortState.col ? sortState.asc : false });
+    const res = await authFetch(`/api/emails?${params}`);
     if (!res.ok) throw new Error('Failed to load emails');
 
     const pageData = await res.json();
+    if (requestId !== listRequest) return;
+    if (page > 0 && page >= pageData.totalPages) {
+      return loadEmails(Math.max(0, pageData.totalPages - 1));
+    }
+    currentPage = page;
     // Handle both paginated response {content:[]} and plain array
     allEmails      = pageData.content ?? pageData;
     filteredEmails = [...allEmails];
     renderEmailTable(filteredEmails);
-    updateStats(allEmails);
-
-    // Render pagination if applicable
-    if (pageData.totalPages > 1) {
-      renderPagination(pageData.number, pageData.totalPages);
-    }
+    renderPagination(pageData.number, pageData.totalPages);
+    await updateStats();
   } catch (err) {
+    if (requestId !== listRequest) return;
     tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">
       <div class="empty-icon">⚠️</div>
       <h3>Could not load emails</h3>
@@ -101,25 +110,39 @@ async function loadEmails(page = 0) {
   }
 }
 
-function renderPagination(current, total) {
-  let html = '<div style="display:flex;gap:.5rem;justify-content:center;margin-top:1rem">';
-  if (current > 0) html += `<button class="btn btn-ghost btn-sm" onclick="loadEmails(${current-1})">← Prev</button>`;
-  html += `<span style="color:var(--muted);line-height:2">Page ${current+1} / ${total}</span>`;
-  if (current < total-1) html += `<button class="btn btn-ghost btn-sm" onclick="loadEmails(${current+1})">Next →</button>`;
-  html += '</div>';
-  document.getElementById('emails-tbody').insertAdjacentHTML('afterend', html);
+function renderPagination(current, total, kind = 'emails') {
+  const id = `${kind}-pagination`;
+  let navigation = document.getElementById(id);
+  if (!navigation) {
+    navigation = document.createElement('div');
+    navigation.id = id;
+    navigation.style.cssText = 'display:flex;gap:.5rem;justify-content:center;margin-top:1rem';
+    document.getElementById(`${kind}-tbody`).closest('table').insertAdjacentElement('afterend', navigation);
+  }
+  if (total <= 1) { navigation.replaceChildren(); return; }
+  const loader = kind === 'emails' ? loadEmails : loadArchivedEmails;
+  navigation.replaceChildren();
+  function button(label, page) {
+    const element = document.createElement('button');
+    element.className = 'btn btn-ghost btn-sm';
+    element.textContent = label;
+    element.onclick = () => loader(page);
+    navigation.appendChild(element);
+  }
+  if (current > 0) button('← Prev', current - 1);
+  const label = document.createElement('span');
+  label.textContent = `Page ${current + 1} / ${total}`;
+  navigation.appendChild(label);
+  if (current < total - 1) button('Next →', current + 1);
 }
 
 // ── Search & filter ───────────────────────────────────────
 
 function handleSearch(query) {
-  const q = query.toLowerCase();
-  filteredEmails = q
-    ? allEmails.filter(e =>
-        e.subject.toLowerCase().includes(q) ||
-        (e.recipientEmail || '').toLowerCase().includes(q))
-    : [...allEmails];
-  renderEmailTable(filteredEmails);
+  searchQuery = query.trim();
+  ++listRequest; // ignore any response for the old search
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => loadEmails(0), 250);
 }
 
 // ── Sortable columns ──────────────────────────────────────
@@ -144,16 +167,8 @@ function setupTableSorting() {
 }
 
 function sortEmails() {
-  const { col, asc } = sortState;
-  if (!col) return;
-  filteredEmails.sort((a, b) => {
-    let va = a[col], vb = b[col];
-    if (va == null) va = DATE_SORT_COLS.has(col) ? '' : -Infinity;
-    if (vb == null) vb = DATE_SORT_COLS.has(col) ? '' : -Infinity;
-    if (typeof va === 'string') return asc ? va.localeCompare(vb) : vb.localeCompare(va);
-    return asc ? va - vb : vb - va;
-  });
-  renderEmailTable(filteredEmails);
+  clearTimeout(searchTimer);
+  loadEmails(0);
 }
 
 // ── Render email table ────────────────────────────────────────
@@ -209,40 +224,27 @@ function renderEmailTable(emails) {
 
 // ── Targeted row update from WebSocket ────────────────────
 
-function updateEmailRow(updatedEmail) {
-  // Update in-memory cache
-  const idx = allEmails.findIndex(e => e.id === updatedEmail.id);
-  if (idx !== -1) allEmails[idx] = updatedEmail;
-  const fidx = filteredEmails.findIndex(e => e.id === updatedEmail.id);
-  if (fidx !== -1) filteredEmails[fidx] = updatedEmail;
-
-  // Update the DOM row without a full re-render
-  const row = document.querySelector(`tr[data-email-id="${updatedEmail.id}"]`);
-  if (!row) { renderEmailTable(filteredEmails); return; }
-
-  const isHot = updatedEmail.leadScore >= HOT_LEAD_THRESHOLD;
-  row.className = isHot ? 'hot-lead' : '';
-  const cells = row.querySelectorAll('td');
-  cells[3].innerHTML = statusBadge(updatedEmail.status);
-  cells[4].innerHTML = scoreBar(updatedEmail.leadScore);
-  cells[5].textContent = updatedEmail.lastOpenedAt ? formatDate(updatedEmail.lastOpenedAt) : '—';
-
-  updateStats(allEmails);
+function updateEmailRow() {
+  // Ranking, search and global counters may all change after a tracking event.
+  loadEmails(currentPage);
 }
 
-// ── Stats ─────────────────────────────────────────────────────
+// ── Global statistics ────────────────────────────────────────
 
-function updateStats(emails) {
-  const total  = emails.length;
-  const opened = emails.filter(e => e.openCount > 0).length;
-  const hot    = emails.filter(e => e.leadScore >= HOT_LEAD_THRESHOLD).length;
-  const avg    = total > 0
-    ? Math.round(emails.reduce((s, e) => s + e.leadScore, 0) / total) : 0;
-
-  document.getElementById('stat-total').textContent      = total;
-  document.getElementById('stat-opened').textContent     = opened;
-  document.getElementById('stat-hot').textContent        = hot;
-  document.getElementById('stat-avg-score').textContent  = avg;
+async function updateStats() {
+  try {
+    const response = await authFetch('/api/emails/stats');
+    if (!response.ok) throw new Error('Statistics unavailable');
+    const stats = await response.json();
+    document.getElementById('stat-total').textContent = stats.total;
+    document.getElementById('stat-opened').textContent = stats.opened;
+    document.getElementById('stat-hot').textContent = stats.hot;
+    document.getElementById('stat-avg-score').textContent = stats.average;
+  } catch {
+    for (const id of ['total', 'opened', 'hot', 'avg-score']) {
+      document.getElementById(`stat-${id}`).textContent = '—';
+    }
+  }
 }
 
 // ── AI Insights: Send-time ────────────────────────────────────
@@ -385,10 +387,7 @@ async function archiveEmail(emailId) {
   try {
     const res = await authFetch(`/api/emails/${emailId}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Failed to archive');
-    allEmails      = allEmails.filter(e => e.id !== emailId);
-    filteredEmails = filteredEmails.filter(e => e.id !== emailId);
-    renderEmailTable(filteredEmails);
-    updateStats(allEmails);
+    await loadEmails(currentPage);
     showToast('Archived', 'Email removed from your dashboard.', 'success');
   } catch (err) {
     showToast('Error', err.message, 'error');
@@ -408,6 +407,8 @@ async function loadArchivedEmails(page = 0) {
     // Handle both paginated {content:[]} and plain array responses
     const emails = pageData.content ?? pageData;
 
+    renderPagination(pageData.number, pageData.totalPages, 'archived');
+    if (page > 0 && page >= pageData.totalPages) return loadArchivedEmails(Math.max(0, pageData.totalPages - 1));
     if (emails.length === 0) {
       tbody.innerHTML = `<tr><td colspan="6">
         <div class="empty-state">
@@ -434,14 +435,7 @@ async function loadArchivedEmails(page = 0) {
         </td>
       </tr>`).join('');
 
-    if (pageData.totalPages > 1) {
-      let html = '<tr><td colspan="6"><div style="display:flex;gap:.5rem;justify-content:center;margin:.5rem 0">';
-      if (page > 0) html += `<button class="btn btn-ghost btn-sm" onclick="loadArchivedEmails(${page-1})">← Prev</button>`;
-      html += `<span style="color:var(--muted);line-height:2">Page ${page+1} / ${pageData.totalPages}</span>`;
-      if (page < pageData.totalPages-1) html += `<button class="btn btn-ghost btn-sm" onclick="loadArchivedEmails(${page+1})">Next →</button>`;
-      html += '</div></td></tr>';
-      tbody.insertAdjacentHTML('beforeend', html);
-    }
+
   } catch (err) {
     tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">
       <div class="empty-icon">⚠️</div><p style="color:var(--muted)">${escHtml(err.message)}</p>
@@ -593,11 +587,16 @@ async function authFetch(path, options = {}) {
   return res;
 }
 
-function logout() {
-  // Invalidate token server-side
-  authFetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
-  localStorage.clear();
-  window.location.href = 'index.html';
+async function logout() {
+  try {
+    const response = await authFetch('/api/auth/logout', { method: 'POST' });
+    if (!response.ok) throw new Error('Could not sign out. Please retry.');
+    if (typeof disconnectWebSocket === 'function') disconnectWebSocket();
+    for (const key of ['nudge_email', 'nudge_userId', 'nudge_createdAt']) localStorage.removeItem(key);
+    window.location.href = 'index.html';
+  } catch (error) {
+    showToast('Sign out failed', error.message, 'error');
+  }
 }
 
 // ── Settings view ─────────────────────────────────────────────
@@ -660,14 +659,12 @@ async function submitChangePassword(e) {
     }
 
     document.getElementById('change-password-form').reset();
-    successEl.textContent = 'Password updated. You will be signed out shortly.';
+    successEl.textContent = 'Password updated.';
     successEl.style.display = 'block';
 
-    // Server rotated the JWT cookie — let the session expire gracefully
-    setTimeout(() => {
-      localStorage.clear();
-      window.location.href = 'index.html';
-    }, 2500);
+    btn.disabled = false;
+    btn.textContent = 'Save password';
+    if (typeof reconnectWebSocket === 'function') reconnectWebSocket();
   } catch (err) {
     errorEl.textContent = err.message;
     errorEl.style.display = 'block';
@@ -763,7 +760,7 @@ function statusBadge(status) {
 function scoreBar(rawScore) {
   const score   = Math.min(100, Math.max(0, Math.round(Number(rawScore) || 0)));
   const color   = score >= HOT_LEAD_THRESHOLD ? '#f59e0b' : score >= 40 ? '#6366f1' : '#64748b';
-  const tooltip = 'Reply Probability Score (0–100). ' +
+  const tooltip = 'Estimated engagement (0–100), not a reply probability. ' +
                   'Based on: open count (up to 40 pts), ' +
                   'recency of last open (up to 40 pts), ' +
                   'frequency bonus for repeated opens (up to 20 pts), ' +

@@ -18,6 +18,15 @@ function getApiBase() {
 }
 
 document.addEventListener('DOMContentLoaded', async () => {
+  document.querySelectorAll('[data-tab]').forEach(button => {
+    button.addEventListener('click', () => showTab(button.dataset.tab, button));
+  });
+  document.querySelectorAll('[data-action="logout"]').forEach(button => button.addEventListener('click', logout));
+  document.getElementById('login-btn').addEventListener('click', login);
+  document.getElementById('password').addEventListener('keydown', event => { if (event.key === 'Enter') login(); });
+  document.getElementById('save-server-btn').addEventListener('click', () => {
+    saveServerUrl().catch(error => showServerError(error.message));
+  });
   const apiBase = await getApiBase();
 
   // Populate server URL field
@@ -36,12 +45,25 @@ document.addEventListener('DOMContentLoaded', async () => {
 
 async function saveServerUrl() {
   const val = document.getElementById('server-url').value.trim().replace(/\/$/, '');
-  if (!val.startsWith('http')) return;
+  let server;
+  try {
+    server = new URL(val);
+    if (server.protocol !== 'https:' && !(server.protocol === 'http:' && ['localhost', '127.0.0.1'].includes(server.hostname))) throw new Error();
+    if (server.username || server.password || server.pathname !== '/' || server.search || server.hash) throw new Error();
+  } catch { showServerError('Use an HTTPS server URL, or HTTP localhost for development.'); return; }
+  const granted = await chrome.permissions.request({ origins: [`${server.origin}/*`] });
+  if (!granted) { showServerError('Server access was not granted.'); return; }
+  const previous = await getApiBase();
+  if (previous !== server.origin) {
+    await chrome.storage.session.remove(['nudge_token', 'nudge_email']);
+    showLoginView();
+  }
   await chrome.storage.local.set({ nudge_api_base: val });
   const dashUrl = `${val}/dashboard.html`;
   document.getElementById('dashboard-link').href = dashUrl;
   document.getElementById('dashboard-link-track').href = dashUrl;
-  const btn = document.querySelector('[onclick="saveServerUrl()"]');
+  document.getElementById('server-status').style.display = 'none';
+  const btn = document.getElementById('save-server-btn');
   btn.textContent = '✓';
   setTimeout(() => { btn.textContent = 'Save'; }, 1500);
 }
@@ -63,7 +85,7 @@ async function login() {
   const errEl    = document.getElementById('login-error');
   const btn      = document.getElementById('login-btn');
 
-  errEl.classList.add('hidden');
+  errEl.style.display = 'none';
   if (!email || !password) { showError('Please enter your email and password.'); return; }
 
   btn.textContent = 'Signing in…';
@@ -81,6 +103,7 @@ async function login() {
     if (!res.ok) { showError(data.error || 'Login failed'); return; }
 
     await chrome.storage.session.set({ nudge_token: data.token, nudge_email: data.email });
+    document.getElementById('password').value = '';
     showLoggedInView(data.email);
   } catch {
     showError('Cannot reach Nudge backend. Is it running?');
@@ -91,8 +114,9 @@ async function login() {
 }
 
 async function logout() {
-  await chrome.runtime.sendMessage({ type: 'LOGOUT' });
-  showLoginView();
+  const result = await chrome.runtime.sendMessage({ type: 'LOGOUT' });
+  if (result?.ok) showLoginView();
+  else document.getElementById('status-text').textContent = result?.error || 'Sign out failed';
 }
 
 // ── Platform detection ────────────────────────────────────────
@@ -144,5 +168,18 @@ function setStatus(connected, text) {
 function showError(msg) {
   const el = document.getElementById('login-error');
   el.textContent = msg;
-  el.classList.remove('hidden');
+  el.style.display = 'block';
+}
+
+function showServerError(message) {
+  const element = document.getElementById('server-status');
+  element.textContent = message;
+  element.style.display = 'block';
+}
+
+function showTab(name, button) {
+  document.querySelectorAll('.p-tab-panel').forEach(element => element.classList.add('hidden'));
+  document.querySelectorAll('[data-tab]').forEach(element => element.classList.remove('active'));
+  document.getElementById(`tab-${name}`).classList.remove('hidden');
+  button?.classList.add('active');
 }

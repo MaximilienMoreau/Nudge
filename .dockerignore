@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+**/target
+**/node_modules
+extension
+database
+.agents
+.aws
+.codex
+.claude

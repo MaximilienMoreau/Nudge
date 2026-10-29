@@ -134,7 +134,7 @@
           <div class="stat-value purple" id="stat-total">—</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Opened</div>
+          <div class="stat-label" title="Estimated from image loads; privacy proxies and blocked images affect accuracy">Detected Opens</div>
           <div class="stat-value green" id="stat-opened">—</div>
         </div>
         <div class="stat-card">
@@ -164,7 +164,7 @@
                 <th data-sort="recipientEmail">Recipient</th>
                 <th data-sort="createdAt">Sent</th>
                 <th data-sort="status">Status</th>
-                <th data-sort="leadScore" title="Reply Probability Score (0–100): open count + recency + frequency">Score ℹ</th>
+                <th data-sort="leadScore" title="Estimated engagement (0–100): opens, recency, frequency and clicks">Score ℹ</th>
                 <th data-sort="lastOpenedAt">Last Opened</th>
                 <th data-sort="clickCount">Clicks</th>
                 <th>Actions</th>
@@ -522,13 +522,14 @@
   }
 </script>
 
+<script src="js/deployment.js"></script>
 <script src="js/config.js"></script>
 <script src="js/constants.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/sockjs-client@1.6.1/dist/sockjs.min.js"
         integrity="sha384-svdnwiXBL+Js+yUneJSRFy24NgGiOfDM/vkQl/vCeVrcbYD6yW8EwPr1FnxTEZsR"
         crossorigin="anonymous" defer></script>
-<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.0.0/bundles/stomp.umd.min.js"
-        integrity="sha384-Yg6PThfsscS0ZfXqo4wtz8k07HIbE29m8rnDLxFPPCxwsaQtHMkKAG9FQ8n9CpDe"
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@7.5.0/bundles/stomp.umd.min.js"
+        integrity="sha384-kQjQD4X78U0SNVeFmVuyOn7JuHmYlQ/CaFvAm/Omtfa8/ev8Iu1Ur9grrK53Vp/z"
         crossorigin="anonymous" defer></script>
 <script src="js/dashboard.js" defer></script>
 <script src="js/websocket.js" defer></script>

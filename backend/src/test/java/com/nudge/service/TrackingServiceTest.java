@@ -68,7 +68,7 @@ class TrackingServiceTest {
         when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN)).thenReturn(1L);
-        when(eventRepo.countByEmailAndType(email, EventType.CLICK)).thenReturn(0L);
+        when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.CLICK)).thenReturn(0L);
         when(leadScoringService.computeScore(anyLong(), anyLong(), any())).thenReturn(55);
 
         assertThat(service.recordOpen("test-uuid", new MockHttpServletRequest())).isTrue();
@@ -89,7 +89,7 @@ class TrackingServiceTest {
         when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), any())).thenReturn(1L);
-        when(eventRepo.countByEmailAndType(any(), eq(EventType.CLICK))).thenReturn(0L);
+        when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.CLICK))).thenReturn(0L);
         when(leadScoringService.computeScore(anyLong(), anyLong(), any())).thenReturn(42);
 
         service.recordOpen("test-uuid", new MockHttpServletRequest());
@@ -105,7 +105,7 @@ class TrackingServiceTest {
         when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN)).thenReturn(2L);
-        when(eventRepo.countByEmailAndType(email, EventType.CLICK)).thenReturn(0L);
+        when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.CLICK)).thenReturn(0L);
         when(leadScoringService.computeScore(anyLong(), anyLong(), any())).thenReturn(70);
 
         service.recordOpen("test-uuid", new MockHttpServletRequest());
@@ -162,7 +162,7 @@ class TrackingServiceTest {
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.OPEN))).thenReturn(1L);
-        when(eventRepo.countByEmailAndType(any(), eq(EventType.CLICK))).thenReturn(1L);
+        when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.CLICK))).thenReturn(1L);
         when(eventRepo.findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(any(), any()))
                 .thenReturn(Optional.empty());
         when(leadScoringService.computeScore(anyLong(), anyLong(), any())).thenReturn(30);
@@ -184,7 +184,7 @@ class TrackingServiceTest {
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.OPEN))).thenReturn(0L);
-        when(eventRepo.countByEmailAndType(any(), eq(EventType.CLICK))).thenReturn(0L);
+        when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.CLICK))).thenReturn(0L);
         when(eventRepo.findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(any(), any()))
                 .thenReturn(Optional.empty());
         when(leadScoringService.computeScore(anyLong(), anyLong(), any())).thenReturn(0);
@@ -202,7 +202,7 @@ class TrackingServiceTest {
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN)).thenReturn(1L);
-        when(eventRepo.countByEmailAndType(email, EventType.CLICK)).thenReturn(1L);
+        when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.CLICK)).thenReturn(1L);
         when(eventRepo.findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(email, EventType.OPEN))
                 .thenReturn(Optional.of(lastOpen));
         when(leadScoringService.computeScore(anyLong(), anyLong(), any())).thenReturn(65);
@@ -226,7 +226,7 @@ class TrackingServiceTest {
         when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), any())).thenReturn(1L);
-        when(eventRepo.countByEmailAndType(any(), eq(EventType.CLICK))).thenReturn(0L);
+        when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.CLICK))).thenReturn(0L);
         when(leadScoringService.computeScore(anyLong(), anyLong(), any())).thenReturn(0);
 
         service.recordOpen("test-uuid", request);
@@ -250,7 +250,7 @@ class TrackingServiceTest {
         when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), any())).thenReturn(1L);
-        when(eventRepo.countByEmailAndType(any(), eq(EventType.CLICK))).thenReturn(0L);
+        when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.CLICK))).thenReturn(0L);
         when(leadScoringService.computeScore(anyLong(), anyLong(), any())).thenReturn(0);
 
         serviceWithProxy.recordOpen("test-uuid", request);
@@ -259,4 +259,15 @@ class TrackingServiceTest {
         verify(eventRepo).save(captor.capture());
         assertThat(captor.getValue().getIpAddress()).isEqualTo("9.9.9.9");
     }
+    @Test
+    void knownScannerClickIsPersistedButDoesNotNotifyOrScore() {
+        when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.addHeader("User-Agent", "Proofpoint");
+        when(botDetectionService.matchesKnownBot("Proofpoint")).thenReturn(true);
+        assertThat(service.recordClick("test-uuid", request)).isTrue();
+        verify(eventRepo).save(argThat(event -> event.isSuspectedBot()));
+        verifyNoInteractions(notificationService, leadScoringService);
+    }
+
 }

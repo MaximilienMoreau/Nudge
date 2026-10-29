@@ -1,11 +1,12 @@
 package com.nudge.config;
 
+import com.nudge.repository.UserRepository;
 import com.nudge.security.JwtUtil;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import com.nudge.security.SecurityConstants;
+import jakarta.servlet.http.Cookie;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
-import jakarta.servlet.http.Cookie;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.server.ServerHttpRequest;
 import org.springframework.http.server.ServerHttpResponse;
 import org.springframework.http.server.ServletServerHttpRequest;
@@ -17,48 +18,45 @@ import org.springframework.messaging.simp.stomp.StompCommand;
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor;
 import org.springframework.messaging.support.ChannelInterceptor;
 import org.springframework.messaging.support.MessageHeaderAccessor;
-import org.springframework.web.socket.WebSocketHandler;
-import org.springframework.web.socket.config.annotation.EnableWebSocketMessageBroker;
-import org.springframework.web.socket.config.annotation.StompEndpointRegistry;
-import org.springframework.web.socket.config.annotation.WebSocketMessageBrokerConfigurer;
+import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.web.socket.*;
+import org.springframework.web.socket.config.annotation.*;
+import org.springframework.web.socket.handler.WebSocketHandlerDecorator;
 import org.springframework.web.socket.server.HandshakeInterceptor;
+import org.springframework.web.util.UriComponentsBuilder;
 
-import java.security.Principal;
+import java.util.Arrays;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
-/**
- * STOMP over WebSocket configuration.
- *
- * Authentication at two levels:
- *   1. HTTP handshake level: HandshakeInterceptor checks a ?token= query param
- *      before the WebSocket upgrade is granted.
- *   2. STOMP CONNECT level: ChannelInterceptor validates the JWT in the
- *      Authorization header of the STOMP CONNECT frame and sets the Principal.
- *
- * Frontend must connect with:
- *   new SockJS(WS_URL + '?token=' + jwtToken)
- *
- * A4 note: For production, replace enableSimpleBroker with enableStompBrokerRelay
- *   pointed at a RabbitMQ / ActiveMQ instance so notifications survive restarts.
- */
+/** Cookie/Bearer authentication with database revocation checks in both directions. */
 @Configuration
 @EnableWebSocketMessageBroker
 public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
-
-    private static final Logger log = LoggerFactory.getLogger(WebSocketConfig.class);
-
     private final JwtUtil jwtUtil;
+    private final UserRepository users;
+    private final Map<String, String> tokens = new ConcurrentHashMap<>();
+    private final Map<String, WebSocketSession> sessions = new ConcurrentHashMap<>();
 
-    @Value("${app.cors.allowed-origins:*}")
-    private String corsAllowedOrigins;
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
 
-    public WebSocketConfig(JwtUtil jwtUtil) {
+    public WebSocketConfig(JwtUtil jwtUtil, UserRepository users) {
         this.jwtUtil = jwtUtil;
+        this.users = users;
+    }
+
+    boolean isCurrent(String token) {
+        if (token == null || !jwtUtil.isValid(token)) return false;
+        return users.findByEmail(jwtUtil.extractEmail(token))
+                .filter(user -> user.getId().equals(jwtUtil.extractUserId(token)))
+                .filter(user -> user.getTokenVersion() == jwtUtil.extractTokenVersion(token))
+                .isPresent();
     }
 
     @Override
     public void configureMessageBroker(MessageBrokerRegistry config) {
-        config.enableSimpleBroker("/topic", "/queue");
+        config.enableSimpleBroker("/queue");
         config.setApplicationDestinationPrefixes("/app");
         config.setUserDestinationPrefix("/user");
     }
@@ -66,92 +64,108 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
         registry.addEndpoint("/ws")
-                .setAllowedOriginPatterns(corsAllowedOrigins.split(","))
-                // Validate the ?token= query param at HTTP handshake time
-                .addInterceptors(new JwtHandshakeInterceptor(jwtUtil))
-                .withSockJS();
+                .setAllowedOriginPatterns(Arrays.stream(allowedOrigins.split(",")).map(String::trim).toArray(String[]::new))
+                .addInterceptors(new HandshakeInterceptor() {
+                    @Override
+                    public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
+                            WebSocketHandler handler, Map<String, Object> attributes) {
+                        String token = null;
+                        if (request instanceof ServletServerHttpRequest servlet) {
+                            Cookie[] cookies = servlet.getServletRequest().getCookies();
+                            if (cookies != null) {
+                                for (Cookie cookie : cookies) {
+                                    if (SecurityConstants.JWT_COOKIE_NAME.equals(cookie.getName())) token = cookie.getValue();
+                                }
+                            }
+                        }
+                        if (token == null) token = UriComponentsBuilder.fromUri(request.getURI()).build()
+                                .getQueryParams().getFirst("token");
+                        if (!isCurrent(token)) {
+                            response.setStatusCode(HttpStatus.UNAUTHORIZED);
+                            return false;
+                        }
+                        attributes.put("wsToken", token);
+                        return true;
+                    }
+                    @Override
+                    public void afterHandshake(ServerHttpRequest request, ServerHttpResponse response,
+                            WebSocketHandler handler, Exception exception) { }
+                }).withSockJS();
     }
 
-    /**
-     * S3 STOMP-level: validate JWT in the CONNECT frame header and set Principal.
-     */
     @Override
     public void configureClientInboundChannel(ChannelRegistration registration) {
         registration.interceptors(new ChannelInterceptor() {
             @Override
             public Message<?> preSend(Message<?> message, MessageChannel channel) {
-                StompHeaderAccessor accessor =
-                        MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
-
-                if (accessor != null && StompCommand.CONNECT.equals(accessor.getCommand())) {
-                    // Try Authorization header (extension / non-cookie clients)
-                    String authHeader = accessor.getFirstNativeHeader("Authorization");
-                    if (authHeader != null && authHeader.startsWith("Bearer ")) {
-                        String token = authHeader.substring(7);
-                        if (jwtUtil.isValid(token)) {
-                            String email = jwtUtil.extractEmail(token);
-                            accessor.setUser(() -> email);
-                            log.debug("WebSocket STOMP authenticated via Bearer: {}", email);
-                        } else {
-                            log.warn("WebSocket STOMP CONNECT rejected: invalid Bearer token");
-                        }
-                    } else {
-                        // Cookie-based auth: user was set during HTTP handshake
-                        Map<String, Object> sessionAttrs = accessor.getSessionAttributes();
-                        if (sessionAttrs != null && sessionAttrs.containsKey("wsUser")) {
-                            String email = (String) sessionAttrs.get("wsUser");
-                            accessor.setUser(() -> email);
-                            log.debug("WebSocket STOMP authenticated via cookie: {}", email);
-                        }
-                    }
+                StompHeaderAccessor accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor.class);
+                if (accessor == null || accessor.getCommand() == null) return message;
+                String id = accessor.getSessionId();
+                if (StompCommand.DISCONNECT.equals(accessor.getCommand())) {
+                    tokens.remove(id);
+                    return message;
+                }
+                String token = tokens.get(id);
+                if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+                    String header = accessor.getFirstNativeHeader("Authorization");
+                    token = header != null && header.startsWith("Bearer ") ? header.substring(7)
+                            : accessor.getSessionAttributes() == null ? null
+                            : (String) accessor.getSessionAttributes().get("wsToken");
+                }
+                if (!isCurrent(token)) throw new org.springframework.security.access.AccessDeniedException("Session expired");
+                if (StompCommand.CONNECT.equals(accessor.getCommand())) {
+                    tokens.put(id, token);
+                    String email = jwtUtil.extractEmail(token);
+                    accessor.setUser(() -> email);
+                }
+                if (StompCommand.SEND.equals(accessor.getCommand()) ||
+                        (StompCommand.SUBSCRIBE.equals(accessor.getCommand()) &&
+                                !"/user/queue/notifications".equals(accessor.getDestination()))) {
+                    throw new org.springframework.security.access.AccessDeniedException("Destination forbidden");
                 }
                 return message;
             }
         });
     }
 
-    // ── HTTP-level handshake interceptor ───────────────────
-
-    private static class JwtHandshakeInterceptor implements HandshakeInterceptor {
-
-        private final JwtUtil jwtUtil;
-
-        JwtHandshakeInterceptor(JwtUtil jwtUtil) { this.jwtUtil = jwtUtil; }
-
-        @Override
-        public boolean beforeHandshake(ServerHttpRequest request, ServerHttpResponse response,
-                                       WebSocketHandler wsHandler, Map<String, Object> attributes) {
-            // 1. Try httpOnly cookie (web frontend)
-            if (request instanceof ServletServerHttpRequest servletRequest) {
-                Cookie[] cookies = servletRequest.getServletRequest().getCookies();
-                if (cookies != null) {
-                    for (Cookie cookie : cookies) {
-                        if ("nudge_jwt".equals(cookie.getName()) && jwtUtil.isValid(cookie.getValue())) {
-                            attributes.put("wsUser", jwtUtil.extractEmail(cookie.getValue()));
-                            return true;
-                        }
-                    }
+    @Override
+    public void configureClientOutboundChannel(ChannelRegistration registration) {
+        registration.interceptors(new ChannelInterceptor() {
+            @Override
+            public Message<?> preSend(Message<?> message, MessageChannel channel) {
+                StompHeaderAccessor accessor = StompHeaderAccessor.wrap(message);
+                if (org.springframework.messaging.simp.SimpMessageType.MESSAGE.equals(accessor.getMessageType()) && !isCurrent(tokens.get(accessor.getSessionId()))) {
+                    return null;
                 }
+                return message;
             }
-            // 2. Fall back to ?token= query param (extension / non-cookie clients)
-            String query = request.getURI().getQuery();
-            if (query != null) {
-                for (String param : query.split("&")) {
-                    if (param.startsWith("token=")) {
-                        String token = param.substring("token=".length());
-                        if (jwtUtil.isValid(token)) {
-                            attributes.put("wsUser", jwtUtil.extractEmail(token));
-                            return true;
-                        }
-                    }
-                }
-            }
-            log.warn("WebSocket handshake rejected: no valid cookie or ?token= param");
-            return false;
-        }
+        });
+    }
 
-        @Override
-        public void afterHandshake(ServerHttpRequest req, ServerHttpResponse res,
-                                   WebSocketHandler handler, Exception ex) {}
+    @Override
+    public void configureWebSocketTransport(WebSocketTransportRegistration registration) {
+        registration.addDecoratorFactory(handler -> new WebSocketHandlerDecorator(handler) {
+            @Override
+            public void afterConnectionEstablished(WebSocketSession session) throws Exception {
+                sessions.put(session.getId(), session);
+                super.afterConnectionEstablished(session);
+            }
+            @Override
+            public void afterConnectionClosed(WebSocketSession session, CloseStatus status) throws Exception {
+                sessions.remove(session.getId());
+                tokens.remove(session.getId());
+                super.afterConnectionClosed(session, status);
+            }
+        });
+    }
+
+    @Scheduled(fixedDelay = 30_000)
+    public void closeRevokedSessions() {
+        sessions.values().forEach(session -> {
+            if (!isCurrent((String) session.getAttributes().get("wsToken"))) {
+                try { session.close(CloseStatus.POLICY_VIOLATION); }
+                catch (java.io.IOException ignored) { }
+            }
+        });
     }
 }

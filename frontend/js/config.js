@@ -9,10 +9,10 @@
  */
 const NUDGE_CONFIG = {
   /** Backend REST API base URL (no trailing slash) */
-  API_BASE: 'http://localhost:8080',
+  API_BASE: window.NUDGE_DEPLOYMENT?.API_BASE || (window.location.port === '3000' ? 'http://localhost:8080' : window.location.origin),
 
   /** WebSocket endpoint (SockJS) */
-  WS_URL: 'http://localhost:8080/ws'
+  WS_URL: window.NUDGE_DEPLOYMENT?.WS_URL || (window.location.port === '3000' ? 'http://localhost:8080' : window.location.origin) + '/ws'
 };
 
 // ── Theme (light / dark) ──────────────────────────────────────

@@ -91,4 +91,15 @@ class FollowUpSchedulerServiceTest {
         assertThat(first.getScheduledFollowUpAt()).isNotNull();
         assertThat(second.getScheduledFollowUpAt()).isNull();
     }
+    @Test
+    void smtpFailureLeavesReminderPending() {
+        TrackedEmail first = email(1);
+        when(repo.findByScheduledFollowUpAtLessThanEqualAndArchivedAtIsNullAndIdGreaterThanOrderByIdAsc(
+                any(), eq(0L), any())).thenReturn(new SliceImpl<>(List.of(first)));
+        doThrow(new IllegalStateException("SMTP failed")).when(mail).sendFollowUpReminder(anyString(), anyString(), anyString());
+        scheduler().checkDueFollowUps();
+        assertThat(first.getScheduledFollowUpAt()).isNotNull();
+        verify(repo, never()).save(any());
+    }
+
 }

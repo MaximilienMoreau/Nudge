@@ -58,20 +58,22 @@ public interface TrackingEventRepository extends JpaRepository<TrackingEvent, Lo
         JOIN users           u  ON u.id  = te.user_id
         WHERE u.email = :userEmail
           AND e.type  = 'OPEN'
+          AND e.suspected_bot = FALSE
         GROUP BY 1, 2
-        ORDER BY 3 DESC
+        ORDER BY 3 DESC, 1 ASC, 2 ASC
         LIMIT 1
         """, nativeQuery = true)
     List<Object[]> findBestSendSlot(@Param("userEmail") String userEmail);
 
     /**
-     * Count total OPEN events for a user (used by AIService to decide
+     * Count genuine OPEN events for a user (used by AIService to decide
      * whether there is enough data for send-time analysis).
      */
     @Query("""
         SELECT COUNT(e) FROM TrackingEvent e
         WHERE e.email.user.email = :userEmail
           AND e.type = com.nudge.model.EventType.OPEN
+          AND e.suspectedBot = false
         """)
     long countOpensByUserEmail(@Param("userEmail") String userEmail);
 }

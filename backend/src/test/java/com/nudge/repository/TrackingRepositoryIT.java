@@ -7,16 +7,14 @@ import com.nudge.model.User;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration;
-import org.springframework.boot.test.autoconfigure.jdbc.AutoConfigureTestDatabase;
-import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.boot.flyway.autoconfigure.FlywayAutoConfiguration;
+import org.springframework.boot.jdbc.test.autoconfigure.AutoConfigureTestDatabase;
+import org.springframework.boot.data.jpa.test.autoconfigure.DataJpaTest;
 import org.springframework.boot.autoconfigure.ImportAutoConfiguration;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
-import org.testcontainers.containers.PostgreSQLContainer;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.postgresql.PostgreSQLContainer;
+import org.junit.jupiter.api.condition.EnabledIf;
 
 import java.util.List;
 import java.util.Optional;
@@ -42,21 +40,36 @@ import static org.assertj.core.api.Assertions.assertThat;
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
 @ImportAutoConfiguration(FlywayAutoConfiguration.class)
-@Testcontainers(disabledWithoutDocker = true)
+@EnabledIf("databaseAvailable")
 class TrackingRepositoryIT {
 
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer<?> postgres =
-            new PostgreSQLContainer<>("postgres:16-alpine");
+    static PostgreSQLContainer postgres;
+
+    static String externalDatabase() {
+        return System.getProperty("nudge.test.db.url", System.getenv("NUDGE_TEST_DB_URL"));
+    }
+    static boolean databaseAvailable() {
+        return externalDatabase() != null || org.testcontainers.DockerClientFactory.instance().isDockerAvailable();
+    }
 
     /** Let Flyway (not Hibernate DDL) own the schema in this test context. */
     @DynamicPropertySource
     static void flyway(DynamicPropertyRegistry registry) {
+        if (externalDatabase() != null) {
+            registry.add("spring.datasource.url", TrackingRepositoryIT::externalDatabase);
+            registry.add("spring.datasource.username", () -> System.getenv().getOrDefault("NUDGE_TEST_DB_USERNAME", "nudge_test"));
+            registry.add("spring.datasource.password", () -> System.getenv().getOrDefault("NUDGE_TEST_DB_PASSWORD", ""));
+        } else {
+            postgres = new PostgreSQLContainer("postgres:16-alpine");
+            postgres.start();
+            registry.add("spring.datasource.url", postgres::getJdbcUrl);
+            registry.add("spring.datasource.username", postgres::getUsername);
+            registry.add("spring.datasource.password", postgres::getPassword);
+        }
         registry.add("spring.flyway.enabled",              () -> "true");
         registry.add("spring.flyway.baseline-on-migrate",  () -> "true");
         registry.add("spring.flyway.locations",            () -> "classpath:db/migration");
-        registry.add("spring.jpa.hibernate.ddl-auto",      () -> "none");
+        registry.add("spring.jpa.hibernate.ddl-auto",      () -> "validate");
     }
 
     @Autowired TrackedEmailRepository emailRepo;
@@ -228,14 +241,14 @@ class TrackingRepositoryIT {
     }
 
     @Test
-    void countOpensByUserEmail_returnsCorrectCount() {
+    void countOpensByUserEmail_excludesBots() {
         saveEvent(EventType.OPEN, false);
-        saveEvent(EventType.OPEN, true);   // bot also counts here (used for "enough data?" check)
+        saveEvent(EventType.OPEN, true);   // bot excluded from send-time analysis
         saveEvent(EventType.CLICK, false);
 
         long count = eventRepo.countOpensByUserEmail(user.getEmail());
 
-        assertThat(count).isEqualTo(2);
+        assertThat(count).isEqualTo(1);
     }
 
     // ── UserRepository ───────────────────────────────────────────────────────

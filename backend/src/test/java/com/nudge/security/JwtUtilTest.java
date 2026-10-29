@@ -1,13 +1,12 @@
 package com.nudge.security;
 
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.security.SignatureException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import java.security.Key;
+import javax.crypto.SecretKey;
 import java.util.Base64;
 import java.util.Date;
 
@@ -88,10 +87,10 @@ class JwtUtilTest {
         // Simulate a legacy token minted before the tokenVersion claim existed by
         // building one directly with the same signing key, skipping the claim.
         String legacyToken = Jwts.builder()
-                .setSubject("legacy@example.com")
+                .subject("legacy@example.com")
                 .claim("userId", 1L)
-                .setExpiration(new Date(System.currentTimeMillis() + 60_000))
-                .signWith((Key) ReflectionTestUtils.getField(jwtUtil, "signingKey"), SignatureAlgorithm.HS256)
+                .expiration(new Date(System.currentTimeMillis() + 60_000))
+                .signWith((SecretKey) ReflectionTestUtils.getField(jwtUtil, "signingKey"), Jwts.SIG.HS256)
                 .compact();
 
         assertThat(jwtUtil.extractTokenVersion(legacyToken)).isEqualTo(0);

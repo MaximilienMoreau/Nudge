@@ -12,6 +12,14 @@
  *           extension popup guides users to the web dashboard.
  */
 
+// Register at document_start, before the webmail installs its Send handlers.
+const sendInterceptors = new Set();
+function dispatchSend(event) {
+  for (const intercept of sendInterceptors) if (intercept(event)) break;
+}
+window.addEventListener('click', dispatchSend, true);
+window.addEventListener('keydown', dispatchSend, true);
+
 // ── Platform detection ─────────────────────────────────────────
 
 const PLATFORM = (() => {
@@ -45,7 +53,7 @@ const ADAPTERS = {
   gmail: {
     findComposeWindows() {
       const found = [];
-      document.querySelectorAll('[data-tooltip="Send"]').forEach(sendBtn => {
+      document.querySelectorAll('.aoO[role="button"], [data-tooltip^="Send"], [data-tooltip^="Envoyer"]').forEach(sendBtn => {
         const container = sendBtn.closest('div[role="dialog"], .nH.Hd');
         if (container) found.push({ container, sendBtn });
       });
@@ -79,13 +87,15 @@ const ADAPTERS = {
       return [...emails];
     },
     extractBody(c) {
-      return c.querySelector('[contenteditable="true"][aria-label]')?.innerText.trim() ?? '';
+      return c.querySelector('[contenteditable="true"][role="textbox"]')?.innerText.trim() ?? '';
     },
     injectPixel(c, url) {
-      const body = c.querySelector('[contenteditable="true"][aria-label]');
-      if (!body) return;
+      const body = c.querySelector('[contenteditable="true"][role="textbox"]');
+      if (!body) return false;
       body.querySelector('.nudge-pixel')?.remove();
       body.appendChild(buildPixelImg(url));
+      body.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
     },
     getSidebarRoot(c) {
       // Append inside the compose bottom bar (send button row)
@@ -137,9 +147,11 @@ const ADAPTERS = {
     },
     injectPixel(c, url) {
       const body = c.querySelector('[contenteditable="true"], [role="textbox"]');
-      if (!body) return;
+      if (!body) return false;
       body.querySelector('.nudge-pixel')?.remove();
       body.appendChild(buildPixelImg(url));
+      body.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
     },
     getSidebarRoot(c) {
       // Insert into the command/toolbar bar at the bottom of the compose area
@@ -171,7 +183,7 @@ const ADAPTERS = {
       // Address chips expose the email in their title or a nested element
       c.querySelectorAll(
         '[data-testid="composer:to"] .composer-addresses-item, ' +
-        '[data-testid="composer:to"] [title]'
+        '[data-testid="composer:to"] [title], [data-testid="composer:cc"] [title], [data-testid="composer:bcc"] [title]'
       ).forEach(el => {
         const txt = el.getAttribute('title') || el.textContent || '';
         const m = txt.match(/[^\s@;<>]+@[^\s@;<>]+\.[^\s@;<>]+/);
@@ -202,7 +214,8 @@ const ADAPTERS = {
           if (body) {
             body.querySelector('.nudge-pixel')?.remove();
             body.appendChild(buildPixelImg(url));
-            return;
+            body.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
           }
         } catch { /* cross-origin guard */ }
       }
@@ -211,7 +224,10 @@ const ADAPTERS = {
       if (body) {
         body.querySelector('.nudge-pixel')?.remove();
         body.appendChild(buildPixelImg(url));
+        body.dispatchEvent(new Event('input', { bubbles: true }));
+        return true;
       }
+      return false;
     },
     getSidebarRoot(c) {
       return (
@@ -265,9 +281,11 @@ const ADAPTERS = {
     },
     injectPixel(c, url) {
       const body = c.querySelector('[contenteditable="true"], [role="textbox"], .note-editable');
-      if (!body) return;
+      if (!body) return false;
       body.querySelector('.nudge-pixel')?.remove();
       body.appendChild(buildPixelImg(url));
+      body.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
     },
     getSidebarRoot(c) {
       return (
@@ -301,7 +319,7 @@ const ADAPTERS = {
       const emails = new Set();
       c.querySelectorAll(
         '[data-test-id="to"] .recipient-text, [data-test-id="to"] [title], ' +
-        '[class*="addressList"] [title]'
+        '[class*="addressList"] [title], [data-test-id="cc"] [title], [data-test-id="bcc"] [title]'
       ).forEach(el => {
         const txt = el.getAttribute('title') || el.textContent || '';
         const m = txt.match(/[^\s@;<>]+@[^\s@;<>]+\.[^\s@;<>]+/);
@@ -329,9 +347,11 @@ const ADAPTERS = {
         '[aria-label*="Body"][contenteditable="true"], ' +
         '[class*="editor"] [contenteditable="true"]'
       );
-      if (!body) return;
+      if (!body) return false;
       body.querySelector('.nudge-pixel')?.remove();
       body.appendChild(buildPixelImg(url));
+      body.dispatchEvent(new Event('input', { bubbles: true }));
+      return true;
     },
     getSidebarRoot(c) {
       return (
@@ -345,34 +365,35 @@ const ADAPTERS = {
 
 const adapter = PLATFORM ? ADAPTERS[PLATFORM] : null;
 
+function startTracking() {
 if (!adapter) {
   // Signal to background/popup that this tab needs dashboard fallback
   chrome.runtime.sendMessage({ type: 'PLATFORM_UNSUPPORTED', host: window.location.hostname });
 } else {
-  const seen = new WeakSet();
-
+  const mounted = new Map();
+  let scanPending = false;
   function scan() {
+    scanPending = false;
+    for (const [container, state] of mounted) {
+      if (!container.isConnected || !state.sendBtn.isConnected) {
+        state.cleanup();
+        mounted.delete(container);
+      }
+    }
     adapter.findComposeWindows().forEach(({ container, sendBtn }) => {
-      if (seen.has(container)) return;
-      seen.add(container);
-
-      // When a compose window is closed / destroyed, remove it from `seen`
-      // so a re-opened draft (or a new compose from the Drafts folder) triggers
-      // a fresh Nudge panel mount.
-      const observer = new MutationObserver(() => {
-        if (!document.body.contains(container)) {
-          seen.delete(container);
-          observer.disconnect();
-        }
-      });
-      observer.observe(document.body, { childList: true, subtree: true });
-
-      mountSidebar(container, sendBtn);
+      if (mounted.has(container)) return;
+      mounted.set(container, { sendBtn, cleanup: mountSidebar(container, sendBtn) });
     });
   }
-
-  new MutationObserver(scan).observe(document.body, { childList: true, subtree: true });
+  new MutationObserver(() => {
+    if (!scanPending) {
+      scanPending = true;
+      requestAnimationFrame(scan);
+    }
+  }).observe(document.body, { childList: true, subtree: true });
   scan();
+}
+
 }
 
 // ── Nudge Sidebar (shared UI) ──────────────────────────────────
@@ -408,6 +429,7 @@ function mountSidebar(container, sendBtn) {
   // Toggle tracking on/off
   checkbox.addEventListener('change', () => {
     const on = checkbox.checked;
+    if (!on) removeTrackingPixels(container);
     statusPill.textContent = on ? 'Tracking ON' : 'Tracking OFF';
     statusPill.className = `nudge-pill ${on ? 'nudge-on' : 'nudge-off'}`;
   });
@@ -421,43 +443,82 @@ function mountSidebar(container, sendBtn) {
     .then(r => { if (sendtimeEl) sendtimeEl.textContent = r?.suggestion ?? 'No data yet'; })
     .catch(() => { if (sendtimeEl) sendtimeEl.textContent = 'No data yet'; });
 
-  // ── Intercept Send ──
-  sendBtn.addEventListener('click', async () => {
-    if (!checkbox.checked) return;
-
-    const subject    = adapter.extractSubject(container);
-    const recipients = adapter.extractRecipients(container);
-    const content    = adapter.extractBody(container);
-
-    if (!subject && recipients.length === 0) return;
-
-    statusPill.textContent = 'Registering…';
-    statusPill.className   = 'nudge-pill nudge-pending';
-
-    try {
-      const res = await chrome.runtime.sendMessage({
-        type: 'REGISTER_EMAIL',
-        payload: { subject, recipientEmails: recipients, content }
-      });
-
-      if (res.success) {
-        res.results.forEach(r => adapter.injectPixel(container, r.trackingPixelUrl));
-        const count = res.results.length;
-        statusPill.textContent = count > 1 ? `✅ ${count} tracked!` : '✅ Tracked!';
-        statusPill.className   = 'nudge-pill nudge-on';
-      } else {
-        statusPill.textContent = '⚠️ ' + (res.error ?? 'Error');
-        statusPill.className   = 'nudge-pill nudge-off';
-      }
-    } catch (err) {
-      console.error('[Nudge] sendMessage failed:', err);
-      statusPill.textContent = '⚠️ Extension error';
-      statusPill.className   = 'nudge-pill nudge-off';
+  // Capture before the webmail's normal send handler; replay only after injection.
+  let pending = false;
+  let replaying = false;
+  function snapshot() {
+    return {
+      subject: adapter.extractSubject(container),
+      recipientEmails: adapter.extractRecipients(container),
+      content: adapter.extractBody(container)
+    };
+  }
+  async function interceptSend(event) {
+    if (replaying) return;
+    if (!checkbox.checked) {
+      removeTrackingPixels(container);
+      return;
     }
-  });
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    if (pending) return;
+    removeTrackingPixels(container);
+    const payload = snapshot();
+    if (payload.recipientEmails.length !== 1) {
+      statusPill.textContent = 'Use one recipient, or turn tracking OFF to send.';
+      statusPill.className = 'nudge-pill nudge-off';
+      return;
+    }
+    if (!payload.subject) payload.subject = '(no subject)';
+    const before = JSON.stringify(snapshot());
+    pending = true;
+    statusPill.textContent = 'Preparing tracking…';
+    statusPill.className = 'nudge-pill nudge-pending';
+    try {
+      const res = await chrome.runtime.sendMessage({ type: 'REGISTER_EMAIL', payload });
+      if (!container.isConnected) return;
+      if (!res?.success || res.results?.length !== 1) {
+        throw new Error(res?.error || 'Could not prepare tracking. Retry or turn tracking OFF.');
+      }
+      if (before !== JSON.stringify(snapshot()) || !checkbox.checked) {
+        throw new Error('Draft changed. Review it and press Send again.');
+      }
+      if (!adapter.injectPixel(container, res.results[0].trackingPixelUrl)) {
+        throw new Error('Editor unavailable. Turn tracking OFF to send.');
+      }
+      statusPill.textContent = 'Tracking prepared';
+      statusPill.className = 'nudge-pill nudge-on';
+      replaying = true;
+      try { sendBtn.click(); } finally { replaying = false; }
+    } catch (error) {
+      removeTrackingPixels(container);
+      statusPill.textContent = error.message;
+      statusPill.className = 'nudge-pill nudge-off';
+    } finally {
+      pending = false;
+    }
+  }
+  const dispatch = event => {
+    if ((event.type === 'click' && (sendBtn === event.target || sendBtn.contains(event.target))) ||
+        (event.type === 'keydown' && event.key === 'Enter' && (event.ctrlKey || event.metaKey) && container.contains(event.target))) {
+      interceptSend(event);
+      return true;
+    }
+    return false;
+  };
+  sendInterceptors.add(dispatch);
+  return () => { sendInterceptors.delete(dispatch); panel.remove(); };
 }
 
 // ── Helpers ────────────────────────────────────────────────────
+
+function removeTrackingPixels(container) {
+  container.querySelectorAll('.nudge-pixel').forEach(pixel => pixel.remove());
+  for (const iframe of container.querySelectorAll('iframe')) {
+    try { iframe.contentDocument?.querySelectorAll('.nudge-pixel').forEach(pixel => pixel.remove()); }
+    catch { /* another origin cannot be edited */ }
+  }
+}
 
 function buildPixelImg(url) {
   const img = document.createElement('img');
@@ -568,4 +629,11 @@ function ensureStyles() {
     .nudge-switch input:checked + .nudge-track::before { transform: translateX(13px); }
   `;
   document.head.appendChild(style);
+}
+
+// Start only after all state (including styles) has been initialized.
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', startTracking, { once: true });
+} else {
+  startTracking();
 }

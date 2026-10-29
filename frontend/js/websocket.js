@@ -4,26 +4,32 @@
  *  Uses NUDGE_CONFIG.WS_URL from config.js.
  *  Authenticates via the httpOnly cookie sent automatically on the SockJS handshake.
  *  Exponential backoff on reconnect (5s → 10s → 20s → 40s, capped at 60s).
- *  On EMAIL_OPENED notification, patches only the affected table row
- *      by fetching the updated email DTO — no full table reload.
+ *  Notifications refresh the current server-sorted page and global statistics.
  *  SockJS and STOMP are loaded via <script defer> in dashboard.html,
  *      not dynamically injected here.
  */
 
 let stompClient   = null;
+let retryTimer = null;
+let stopped = false;
 let retryDelay    = 5000;   // starts at 5s
 const MAX_DELAY   = 60000;
 
 function connectWebSocket() {
   // Token is in an httpOnly cookie — no need to pass it explicitly.
   // SockJS sends cookies automatically for same-origin requests.
-  if (!localStorage.getItem('nudge_email')) return;
+  if (stopped || !localStorage.getItem('nudge_email')) return;
 
-  const socket = new SockJS(NUDGE_CONFIG.WS_URL);
-  stompClient  = Stomp.over(socket);
-  stompClient.debug = () => {};
-
-  stompClient.connect({}, onConnected, onError);
+  const client = new StompJs.Client({
+    webSocketFactory: () => new SockJS(NUDGE_CONFIG.WS_URL),
+    reconnectDelay: 0, // reconnect below with exponential backoff
+    debug: () => {},
+    onConnect: () => { if (stompClient === client) onConnected(); },
+    onWebSocketClose: event => { if (stompClient === client) onError(event); },
+    onStompError: frame => console.warn('[Nudge WS]', frame.headers.message)
+  });
+  stompClient = client;
+  client.activate();
 }
 
 function onConnected() {
@@ -44,7 +50,9 @@ function onError(err) {
   const delaySec = Math.round(retryDelay / 1000);
   setWsDot(false, `Reconnecting in ${delaySec}s…`);
   console.warn('[Nudge WS] Connection error — retrying in', retryDelay, 'ms', err);
-  setTimeout(() => {
+  clearTimeout(retryTimer);
+  if (stopped) return;
+  retryTimer = setTimeout(() => {
     retryDelay = Math.min(retryDelay * 2, MAX_DELAY);
     connectWebSocket();
   }, retryDelay);
@@ -68,18 +76,7 @@ async function handleNotification(notification) {
       showToast(title, msg, isHot ? 'success' : 'info');
     }
 
-    // Fetch only the updated email DTO and patch the table row
-    try {
-      const res = await fetch(`${NUDGE_CONFIG.API_BASE}/api/emails/${emailId}`, {
-        credentials: 'include'
-      });
-      if (res.ok && typeof updateEmailRow === 'function') {
-        updateEmailRow(await res.json());
-      }
-    } catch {
-      // Fallback to full reload if the targeted update fails
-      if (typeof loadEmails === 'function') loadEmails();
-    }
+    if (typeof updateEmailRow === 'function') updateEmailRow();
   }
 
   if (type === 'FOLLOW_UP_REMINDER') {
@@ -105,3 +102,18 @@ function setWsDot(connected, label = connected ? 'Live' : 'Reconnecting…') {
 
 // Boot when page loads
 document.addEventListener('DOMContentLoaded', connectWebSocket);
+
+function disconnectWebSocket() {
+  stopped = true;
+  clearTimeout(retryTimer);
+  const client = stompClient;
+  stompClient = null;
+  if (client) client.deactivate();
+}
+
+function reconnectWebSocket() {
+  disconnectWebSocket();
+  stopped = false;
+  connectWebSocket();
+}
+window.addEventListener('pagehide', disconnectWebSocket);

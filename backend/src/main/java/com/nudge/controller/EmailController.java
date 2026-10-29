@@ -4,8 +4,9 @@ import com.nudge.dto.EmailCreateRequest;
 import com.nudge.dto.EmailDTO;
 import com.nudge.dto.ScheduleFollowUpRequest;
 import com.nudge.service.EmailService;
+import com.nudge.repository.DashboardRepository;
 import jakarta.validation.Valid;
-import org.springframework.data.domain.Page;
+import com.nudge.dto.EmailPageResponse;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.ResponseEntity;
@@ -34,8 +35,11 @@ public class EmailController {
 
     private final EmailService emailService;
 
-    public EmailController(EmailService emailService) {
+    private final DashboardRepository dashboard;
+
+    public EmailController(EmailService emailService, DashboardRepository dashboard) {
         this.emailService = emailService;
+        this.dashboard = dashboard;
     }
 
     /**
@@ -43,12 +47,20 @@ public class EmailController {
      * paginated; defaults to page 0, up to 50 emails per page.
      */
     @GetMapping
-    public ResponseEntity<Page<EmailDTO>> listEmails(
+    public ResponseEntity<EmailPageResponse> listEmails(
             @AuthenticationPrincipal UserDetails user,
             @RequestParam(defaultValue = "0")  int page,
-            @RequestParam(defaultValue = "50") int size) {
+            @RequestParam(defaultValue = "50") int size,
+            @RequestParam(defaultValue = "") String search,
+            @RequestParam(defaultValue = "createdAt") String sort,
+            @RequestParam(defaultValue = "false") boolean ascending) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 200));
-        return ResponseEntity.ok(emailService.getEmailsForUser(user.getUsername(), pageable));
+        return ResponseEntity.ok(EmailPageResponse.of(dashboard.list(user.getUsername(), false, search, sort, ascending, pageable)));
+    }
+
+    @GetMapping("/stats")
+    public ResponseEntity<Map<String, Object>> stats(@AuthenticationPrincipal UserDetails user) {
+        return ResponseEntity.ok(dashboard.stats(user.getUsername()));
     }
 
     /**
@@ -91,12 +103,12 @@ public class EmailController {
      * Returns soft-deleted emails for the authenticated user; paginated to prevent OOM.
      */
     @GetMapping("/archived")
-    public ResponseEntity<Page<EmailDTO>> listArchivedEmails(
+    public ResponseEntity<EmailPageResponse> listArchivedEmails(
             @AuthenticationPrincipal UserDetails user,
             @RequestParam(defaultValue = "0")   int page,
             @RequestParam(defaultValue = "100") int size) {
         Pageable pageable = PageRequest.of(page, Math.min(size, 200));
-        return ResponseEntity.ok(emailService.getArchivedEmailsForUser(user.getUsername(), pageable));
+        return ResponseEntity.ok(EmailPageResponse.of(dashboard.list(user.getUsername(), true, "", "archivedAt", false, pageable)));
     }
 
     /**

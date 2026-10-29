@@ -20,7 +20,7 @@ async function getApiBase() {
 
 // ── Track unsupported-platform tabs reported by content.js ────
 
-const unsupportedTabs = new Set();
+
 
 // ── Message router ────────────────────────────────────────────
 
@@ -50,13 +50,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
     case 'PLATFORM_UNSUPPORTED':
       // content.js fires this when it loads on an unsupported host
-      if (sender.tab?.id) unsupportedTabs.add(sender.tab.id);
+
       return false;
 
     case 'LOGOUT':
-      chrome.storage.session.remove(['nudge_token', 'nudge_email'], () =>
-        sendResponse({ ok: true })
-      );
+      handleLogout().then(sendResponse).catch(error => sendResponse({ ok: false, error: error.message }));
       return true;
   }
 });
@@ -75,6 +73,7 @@ async function handleRegisterEmail(payload) {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`
     },
+    signal: AbortSignal.timeout(15000),
     body: JSON.stringify(payload)
   });
 
@@ -153,4 +152,16 @@ function getStoredCredentials() {
       resolve({ token: result.nudge_token, email: result.nudge_email });
     });
   });
+}
+
+async function handleLogout() {
+  const [apiBase, { token }] = await Promise.all([getApiBase(), getStoredCredentials()]);
+  if (token) {
+    const response = await fetch(`${apiBase}/api/auth/logout`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(15000)
+    });
+    if (!response.ok && response.status !== 401) throw new Error('Sign out failed. Please retry.');
+  }
+  await chrome.storage.session.remove(['nudge_token', 'nudge_email']);
+  return { ok: true };
 }

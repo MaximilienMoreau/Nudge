@@ -1,8 +1,5 @@
 package com.nudge.config;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -16,7 +13,7 @@ import java.util.stream.Collectors;
 /**
  * General application bean definitions.
  *
- * RestClient (Spring 6.1) exposed as a Spring bean with configured timeouts.
+ * RestClient (Spring 7) exposed as a Spring bean with configured timeouts.
  *     Replaces the deprecated RestTemplate (in maintenance mode since Spring 5.0).
  * Reuse Spring's managed ObjectMapper (Jackson auto-configuration).
  * Trusted proxy ranges parsed from configuration property.
@@ -54,16 +51,4 @@ public class AppConfig {
                 .collect(Collectors.toSet());
     }
 
-    /**
-     * Expose the Spring-managed ObjectMapper as a named bean so services
-     * can inject it instead of creating their own instances.
-     * Jackson auto-configuration provides this bean; we just expose it here
-     * for clarity / explicit injection.
-     */
-    @Bean
-    public ObjectMapper objectMapper() {
-        return new ObjectMapper()
-                .registerModule(new JavaTimeModule())
-                .disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-    }
 }
