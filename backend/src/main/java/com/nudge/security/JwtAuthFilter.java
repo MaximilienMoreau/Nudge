@@ -51,12 +51,18 @@ public class JwtAuthFilter extends OncePerRequestFilter {
             String email = jwtUtil.extractEmail(token);
 
             if (SecurityContextHolder.getContext().getAuthentication() == null) {
-                UserDetails userDetails = userDetailsService.loadUserByUsername(email);
+                UserDetails userDetails;
+                try {
+                    userDetails = userDetailsService.loadUserByUsername(email);
+                } catch (org.springframework.security.core.userdetails.UsernameNotFoundException deleted) {
+                    filterChain.doFilter(request, response);
+                    return;
+                }
 
                 // Reject tokens whose tokenVersion no longer matches the DB
                 if (userDetails instanceof User user) {
                     int tokenTv = jwtUtil.extractTokenVersion(token);
-                    if (tokenTv != user.getTokenVersion()) {
+                    if (tokenTv != user.getTokenVersion() || !user.getId().equals(jwtUtil.extractUserId(token))) {
                         log.debug("JWT rejected: tokenVersion mismatch for {}", email);
                         filterChain.doFilter(request, response);
                         return;
@@ -75,21 +81,16 @@ public class JwtAuthFilter extends OncePerRequestFilter {
     }
 
     /**
-     * Extract the raw JWT: httpOnly cookie first (web frontend),
-     * then Authorization: Bearer header (extension / API clients).
+     * Extract the raw JWT: an explicit Bearer header takes precedence over the cookie.
      */
     private String extractToken(HttpServletRequest request) {
+        String header = request.getHeader("Authorization");
+        if (StringUtils.hasText(header) && header.startsWith("Bearer ")) return header.substring(7);
         Cookie[] cookies = request.getCookies();
         if (cookies != null) {
             for (Cookie cookie : cookies) {
-                if (SecurityConstants.JWT_COOKIE_NAME.equals(cookie.getName())) {
-                    return cookie.getValue();
-                }
+                if (SecurityConstants.JWT_COOKIE_NAME.equals(cookie.getName())) return cookie.getValue();
             }
-        }
-        String header = request.getHeader("Authorization");
-        if (StringUtils.hasText(header) && header.startsWith("Bearer ")) {
-            return header.substring(7);
         }
         return null;
     }

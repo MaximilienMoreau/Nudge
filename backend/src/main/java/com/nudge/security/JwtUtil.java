@@ -3,7 +3,6 @@ package com.nudge.security;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
 import io.jsonwebtoken.io.Decoders;
 import io.jsonwebtoken.security.Keys;
 import jakarta.annotation.PostConstruct;
@@ -12,7 +11,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import java.security.Key;
+import javax.crypto.SecretKey;
 import java.util.Date;
 
 /**
@@ -38,7 +37,7 @@ public class JwtUtil {
     private long expirationMs;
 
     /** Cached signing key — derived once at startup. */
-    private Key signingKey;
+    private SecretKey signingKey;
 
     @PostConstruct
     void init() {
@@ -49,22 +48,22 @@ public class JwtUtil {
     /** Generate a signed JWT for the given user, embedding the tokenVersion. */
     public String generateToken(Long userId, String email, int tokenVersion) {
         return Jwts.builder()
-                .setSubject(email)
+                .subject(email)
                 .claim("userId", userId)
                 .claim("tokenVersion", tokenVersion)         // token version
-                .setIssuedAt(new Date())
-                .setExpiration(new Date(System.currentTimeMillis() + expirationMs))
-                .signWith(signingKey, SignatureAlgorithm.HS256)
+                .issuedAt(new Date())
+                .expiration(new Date(System.currentTimeMillis() + expirationMs))
+                .signWith(signingKey, Jwts.SIG.HS256)
                 .compact();
     }
 
     /** Parse and validate a token, returning its claims. Throws on invalid token. */
     public Claims extractClaims(String token) {
-        return Jwts.parserBuilder()
-                .setSigningKey(signingKey)
+        return Jwts.parser()
+                .verifyWith(signingKey)
                 .build()
-                .parseClaimsJws(token)
-                .getBody();
+                .parseSignedClaims(token)
+                .getPayload();
     }
 
     public String extractEmail(String token) {
@@ -86,7 +85,8 @@ public class JwtUtil {
     public boolean isValid(String token) {
         try {
             Claims claims = extractClaims(token);
-            return claims.getExpiration().after(new Date());
+            return claims.getExpiration() != null && claims.getExpiration().after(new Date())
+                    && claims.getSubject() != null && !claims.getSubject().isBlank();
         } catch (JwtException | IllegalArgumentException e) {
             log.debug("JWT validation failed: {}", e.getMessage());
             return false;

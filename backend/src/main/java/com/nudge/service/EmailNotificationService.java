@@ -76,6 +76,7 @@ public class EmailNotificationService {
             log.info("Email notification sent to {}", to);
         } catch (Exception e) {
             log.error("Failed to send email notification to {}: {}", to, e.getMessage());
+            throw new IllegalStateException("Email notification delivery failed", e);
         }
     }
 }

@@ -69,7 +69,7 @@ public class LeadScoringService {
      * of the most recent genuine open.
      *
      * @param openCount  genuine OPEN event count (suspected bots excluded)
-     * @param clickCount total CLICK event count (clicks are always genuine)
+     * @param clickCount genuine CLICK event count (known scanners excluded)
      * @param lastOpen   timestamp of the most recent genuine OPEN, or null
      * @return score in [0, 100]
      */

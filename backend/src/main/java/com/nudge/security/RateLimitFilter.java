@@ -1,8 +1,6 @@
 package com.nudge.security;
 
-import io.github.bucket4j.Bandwidth;
 import io.github.bucket4j.Bucket;
-import io.github.bucket4j.Refill;
 import jakarta.servlet.*;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -65,8 +63,7 @@ public class RateLimitFilter implements Filter {
 
         BucketEntry(int capacity) {
             this.bucket = Bucket.builder()
-                    .addLimit(Bandwidth.classic(capacity,
-                            Refill.greedy(capacity, Duration.ofMinutes(1))))
+                    .addLimit(limit -> limit.capacity(capacity).refillGreedy(capacity, Duration.ofMinutes(1)))
                     .build();
             this.lastUsedMs = System.currentTimeMillis();
         }

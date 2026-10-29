@@ -38,6 +38,19 @@ public class AuthController {
     @Value("${app.cookie.secure:false}")
     private boolean cookieSecure;
 
+    @Value("${app.cookie.same-site:Strict}")
+    private String cookieSameSite;
+
+    @jakarta.annotation.PostConstruct
+    void validateCookieConfig() {
+        if (!java.util.Set.of("Strict", "Lax", "None").contains(cookieSameSite)) {
+            throw new IllegalStateException("COOKIE_SAME_SITE must be Strict, Lax or None");
+        }
+        if ("None".equals(cookieSameSite) && !cookieSecure) {
+            throw new IllegalStateException("COOKIE_SAME_SITE=None requires COOKIE_SECURE=true");
+        }
+    }
+
     public AuthController(AuthService authService) {
         this.authService = authService;
     }
@@ -67,8 +80,11 @@ public class AuthController {
     @PutMapping("/password")
     public ResponseEntity<AuthResponse> changePassword(
             @AuthenticationPrincipal UserDetails principal,
-            @Valid @RequestBody PasswordChangeRequest request) {
-        return ResponseEntity.ok(authService.changePassword(principal.getUsername(), request));
+            @Valid @RequestBody PasswordChangeRequest request,
+            HttpServletResponse response) {
+        AuthResponse auth = authService.changePassword(principal.getUsername(), request);
+        setAuthCookie(response, auth.getToken());
+        return ResponseEntity.ok(auth);
     }
 
     /**
@@ -102,7 +118,7 @@ public class AuthController {
         ResponseCookie cookie = ResponseCookie.from(SecurityConstants.JWT_COOKIE_NAME, token)
                 .httpOnly(true)
                 .secure(cookieSecure)
-                .sameSite("Strict")
+                .sameSite(cookieSameSite)
                 .path("/")
                 .maxAge(Duration.ofMillis(jwtExpirationMs))
                 .build();
@@ -113,7 +129,7 @@ public class AuthController {
         ResponseCookie cookie = ResponseCookie.from(SecurityConstants.JWT_COOKIE_NAME, "")
                 .httpOnly(true)
                 .secure(cookieSecure)
-                .sameSite("Strict")
+                .sameSite(cookieSameSite)
                 .path("/")
                 .maxAge(0)
                 .build();

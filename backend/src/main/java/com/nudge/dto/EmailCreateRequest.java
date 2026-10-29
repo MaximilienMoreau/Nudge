@@ -25,6 +25,7 @@ public class EmailCreateRequest {
      * Used when recipientEmails is not provided.
      */
     @Email
+    @Size(max = 255)
     private String recipientEmail;
 
     /**
@@ -32,7 +33,7 @@ public class EmailCreateRequest {
      * When provided and non-empty, recipientEmail is ignored.
      */
     @Size(max = 50, message = "At most 50 recipients per request")
-    private List<@Email String> recipientEmails;
+    private List<@NotBlank @Email @Size(max = 255) String> recipientEmails;
 
     @AssertTrue(message = "At least one recipient email must be provided")
     public boolean isRecipientProvided() {

@@ -12,33 +12,15 @@ import com.nudge.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
-/**
- * Core email management service.
- *
- * N+1 queries fixed — events for all emails are batch-fetched in a single
- *     query, then grouped into a Map<emailId, List<event>> before DTO assembly.
- *
- * Email content is encrypted at rest via EncryptionService.
- *
- * Soft-delete via archivedAt timestamp.
- *
- * Multi-recipient support — createTrackedEmail accepts a list of recipient
- *     emails and returns one EmailDTO per recipient.
- *
- * getEmailsForUser supports pagination.
- */
+/** Owns email creation, detail reads and lifecycle operations. DashboardRepository aggregates lists. */
 @Service
 public class EmailService {
 
@@ -104,23 +86,6 @@ public class EmailService {
         return results;
     }
 
-    /**
-     * Paginated list of active tracked emails for the authenticated user.
-     */
-    @Transactional(readOnly = true)
-    public Page<EmailDTO> getEmailsForUser(String userEmail, Pageable pageable) {
-        User user = userRepo.findByEmail(userEmail)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
-
-        Page<TrackedEmail> page = emailRepo.findByUserAndArchivedAtIsNullOrderByCreatedAtDesc(user, pageable);
-
-        // Batch-fetch all events for the current page in one query
-        List<TrackedEmail> emails = page.getContent();
-        Map<Long, List<TrackingEvent>> eventsByEmail = batchFetchEvents(emails);
-
-        return page.map(email -> toDTO(email, eventsByEmail.getOrDefault(email.getId(), List.of())));
-    }
-
     /** Retrieve a single email DTO by ID (validates ownership). */
     @Transactional(readOnly = true)
     public EmailDTO getEmailById(Long emailId, String userEmail) {
@@ -139,17 +104,6 @@ public class EmailService {
         email.setArchivedAt(LocalDateTime.now());
         emailRepo.save(email);
         log.info("Email {} archived by {}", emailId, userEmail);
-    }
-
-    /** Paginated list of archived emails for the authenticated user. */
-    @Transactional(readOnly = true)
-    public Page<EmailDTO> getArchivedEmailsForUser(String userEmail, Pageable pageable) {
-        User user = userRepo.findByEmail(userEmail)
-                .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
-        Page<TrackedEmail> page = emailRepo.findByUserAndArchivedAtIsNotNullOrderByArchivedAtDesc(user, pageable);
-        List<TrackedEmail> emails = page.getContent();
-        Map<Long, List<TrackingEvent>> eventsByEmail = batchFetchEvents(emails);
-        return page.map(e -> toDTO(e, eventsByEmail.getOrDefault(e.getId(), List.of())));
     }
 
     /** Restore a soft-deleted email (clears archivedAt). */
@@ -191,25 +145,13 @@ public class EmailService {
         return email;
     }
 
-    /**
-     * Batch-fetch events for a list of emails in one DB round-trip,
-     * then group them by email ID.
-     */
-    private Map<Long, List<TrackingEvent>> batchFetchEvents(List<TrackedEmail> emails) {
-        if (emails.isEmpty()) return Map.of();
-        List<TrackingEvent> allEvents = eventRepo.findByEmailInOrderByTimestampDesc(emails);
-        return allEvents.stream().collect(
-                Collectors.groupingBy(e -> e.getEmail().getId())
-        );
-    }
-
     /** Build the full DTO from the email and its pre-fetched events. */
     private EmailDTO toDTO(TrackedEmail email, List<TrackingEvent> events) {
         List<TrackingEvent> opens = events.stream()
                 .filter(e -> e.getType() == EventType.OPEN && !e.isSuspectedBot())
                 .toList();
         List<TrackingEvent> clicks = events.stream()
-                .filter(e -> e.getType() == EventType.CLICK)
+                .filter(e -> e.getType() == EventType.CLICK && !e.isSuspectedBot())
                 .toList();
 
         int openCount  = opens.size();

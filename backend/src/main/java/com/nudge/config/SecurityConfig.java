@@ -1,6 +1,7 @@
 package com.nudge.config;
 
 import com.nudge.security.JwtAuthFilter;
+import com.nudge.security.CookieOriginFilter;
 import com.nudge.security.RateLimitFilter;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
@@ -74,7 +75,7 @@ public class SecurityConfig {
         boolean isProd = Arrays.asList(environment.getActiveProfiles()).contains("prod");
         boolean hasWildcard = Arrays.stream(corsAllowedOrigins.split(","))
                 .map(String::trim)
-                .anyMatch("*"::equals);
+                .anyMatch(origin -> origin.contains("*"));
         if (isProd && hasWildcard) {
             throw new IllegalStateException(
                     "app.cors.allowed-origins is '*' while the 'prod' profile is active. " +
@@ -90,8 +91,9 @@ public class SecurityConfig {
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/track/**").permitAll()
-                .requestMatchers("/ws/**").permitAll()
+                .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
+                .requestMatchers("/api/auth/login", "/api/auth/register", "/track/**").permitAll()
+                .requestMatchers("/ws/**", "/actuator/health", "/actuator/health/**").permitAll()
                 .requestMatchers("/", "/*.html", "/js/**", "/css/**", "/images/**", "/favicon.ico").permitAll()
                 .anyRequest().authenticated()
             )
@@ -102,9 +104,24 @@ public class SecurityConfig {
             .authenticationProvider(authenticationProvider())
             // Rate limiter before JWT filter
             .addFilterBefore(rateLimitFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class);
+            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(new CookieOriginFilter(corsAllowedOrigins), UsernamePasswordAuthenticationFilter.class);
 
         return http.build();
+    }
+
+    @Bean
+    public org.springframework.boot.web.servlet.FilterRegistrationBean<RateLimitFilter> rateLimitRegistration() {
+        var registration = new org.springframework.boot.web.servlet.FilterRegistrationBean<>(rateLimitFilter);
+        registration.setEnabled(false);
+        return registration;
+    }
+
+    @Bean
+    public org.springframework.boot.web.servlet.FilterRegistrationBean<JwtAuthFilter> jwtRegistration() {
+        var registration = new org.springframework.boot.web.servlet.FilterRegistrationBean<>(jwtAuthFilter);
+        registration.setEnabled(false);
+        return registration;
     }
 
     @Bean
@@ -132,8 +149,7 @@ public class SecurityConfig {
 
     @Bean
     public AuthenticationProvider authenticationProvider() {
-        DaoAuthenticationProvider provider = new DaoAuthenticationProvider();
-        provider.setUserDetailsService(userDetailsService);
+        DaoAuthenticationProvider provider = new DaoAuthenticationProvider(userDetailsService);
         provider.setPasswordEncoder(passwordEncoder());
         return provider;
     }

@@ -1,13 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Nudge — Email Tracker",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Get alerted the moment someone opens your email — no reply needed. Works on Gmail, Outlook, Proton Mail, Infomaniak, and Yahoo Mail. Compatible with Chrome and Edge.",
 
   "permissions": [
     "storage",
     "activeTab"
   ],
+
+  "optional_host_permissions": ["https://*/*", "http://127.0.0.1/*"],
 
   "host_permissions": [
     "https://mail.google.com/*",
@@ -38,7 +40,7 @@
         "https://mail.yahoo.com/*"
       ],
       "js": ["content.js"],
-      "run_at": "document_idle"
+      "run_at": "document_start"
     }
   ],
 

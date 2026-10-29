@@ -1,7 +1,7 @@
 package com.nudge.service;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.ObjectMapper;
 import com.nudge.dto.FollowUpRequest;
 import com.nudge.dto.FollowUpResponse;
 import com.nudge.dto.SendTimeResponse;
@@ -133,7 +133,7 @@ public class AIService {
 
         // Use COUNT queries (O(1)) — mirrors TrackingService hot-path to avoid loading all events
         long openCountL  = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN);
-        long clickCountL = eventRepo.countByEmailAndType(email, EventType.CLICK);
+        long clickCountL = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.CLICK);
         LocalDateTime lastOpen = eventRepo
                 .findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(email, EventType.OPEN)
                 .map(TrackingEvent::getTimestamp)
@@ -210,14 +210,14 @@ public class AIService {
 
     private String buildEngagementContext(InternalFollowUpContext ctx) {
         if (ctx.openCount == 0) {
-            return "Context: The email was never opened. Be gentle and non-pushy.";
+            return "Context: No open was detected; privacy features may hide real opens. Be gentle and non-pushy.";
         }
         if (ctx.openCount >= 3) {
             return "Context: The recipient opened the email " + ctx.openCount +
-                   " times — they are clearly interested. Be confident and push for a response.";
+                   " times according to tracking estimates. Do not assume interest or mention tracking.";
         }
         if (ctx.engagementScore > 60) {
-            return "Context: High engagement detected. They opened it recently. Strike while the iron is hot.";
+            return "Context: Recent engagement signals were detected, but may be affected by privacy proxies. Keep the follow-up respectful.";
         }
         return "Context: Moderate engagement. Keep the tone friendly and curious.";
     }

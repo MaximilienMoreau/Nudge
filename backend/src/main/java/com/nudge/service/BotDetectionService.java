@@ -71,9 +71,9 @@ public class BotDetectionService {
         return false;
     }
 
-    private boolean matchesKnownBot(String userAgent) {
+    public boolean matchesKnownBot(String userAgent) {
         if (userAgent == null || userAgent.isBlank()) return false;
-        String ua = userAgent.toLowerCase();
+        String ua = userAgent.toLowerCase(java.util.Locale.ROOT);
         for (String pattern : BOT_UA_PATTERNS) {
             if (ua.contains(pattern)) return true;
         }

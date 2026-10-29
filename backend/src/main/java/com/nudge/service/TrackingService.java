@@ -100,7 +100,7 @@ public class TrackingService {
 
             // COUNT genuine opens only — O(1) regardless of event history
             long openCount  = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN);
-            long clickCount = eventRepo.countByEmailAndType(email, EventType.CLICK);
+            long clickCount = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.CLICK);
             int  score      = leadScoringService.computeScore(openCount, clickCount, event.getTimestamp());
 
             log.info("Email opened: '{}' by {} (genuine opens: {}, score: {})",
@@ -114,9 +114,8 @@ public class TrackingService {
     /**
      * Record a CLICK event triggered by a tracked link redirect.
      *
-     * Clicks are always attributed to the human (bots do not follow links),
-     * so no bot-detection check is needed here. The score still uses genuine
-     * open counts to avoid inflating recency from bot pre-fetches.
+     * Known scanner User-Agents are persisted as suspected bots and excluded
+     * from notifications and scores. Timing heuristics are reserved for opens.
      *
      * COUNT + single-row findFirst — avoids loading all events.
      *
@@ -132,11 +131,13 @@ public class TrackingService {
             event.setType(EventType.CLICK);
             event.setIpAddress(extractIp(request));
             event.setUserAgent(request.getHeader("User-Agent"));
+            event.setSuspectedBot(botDetectionService.matchesKnownBot(request.getHeader("User-Agent")));
             eventRepo.save(event);
+            if (event.isSuspectedBot()) return true;
 
             // P4 + BD: genuine open count + last genuine open timestamp
             long openCount  = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN);
-            long clickCount = eventRepo.countByEmailAndType(email, EventType.CLICK);
+            long clickCount = eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.CLICK);
             LocalDateTime lastOpen = eventRepo
                     .findFirstByEmailAndTypeAndSuspectedBotFalseOrderByTimestampDesc(email, EventType.OPEN)
                     .map(TrackingEvent::getTimestamp)
@@ -162,7 +163,18 @@ public class TrackingService {
                 score,
                 LocalDateTime.now()
         );
-        notificationService.notifyUser(ownerEmail, notification);
+        Runnable deliver = () -> {
+            try { notificationService.notifyUser(ownerEmail, notification); }
+            catch (Exception error) { log.error("Notification delivery failed for email id={}", email.getId(), error); }
+        };
+        if (org.springframework.transaction.support.TransactionSynchronizationManager.isSynchronizationActive()) {
+            org.springframework.transaction.support.TransactionSynchronizationManager.registerSynchronization(
+                new org.springframework.transaction.support.TransactionSynchronization() {
+                    @Override public void afterCommit() { deliver.run(); }
+                });
+        } else {
+            deliver.run();
+        }
     }
 
     /**
