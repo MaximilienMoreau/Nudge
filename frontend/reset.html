@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta name="referrer" content="no-referrer"/>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Nudge — New password</title>
+  <script>if(localStorage.getItem('nudge_theme')==='light')document.documentElement.setAttribute('data-theme','light');</script>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="icon" type="image/svg+xml" href="images/favicon.svg"/>
+  <link rel="stylesheet" href="css/style.css"/>
+</head>
+<body class="auth-page">
+
+  <div class="auth-card">
+    <div class="auth-logo">
+      <div style="flex:1">
+        <h1>Nudge</h1>
+        <p>Choose a new password</p>
+      </div>
+    </div>
+
+    <form id="reset-form">
+      <div class="form-group">
+        <label for="reset-password">New password</label>
+        <input type="password" id="reset-password" autocomplete="new-password" minlength="8" required/>
+      </div>
+      <div class="form-group">
+        <label for="reset-confirm">Confirm new password</label>
+        <input type="password" id="reset-confirm" autocomplete="new-password" minlength="8" required/>
+      </div>
+      <div id="reset-result" role="status" style="font-size:.85rem;margin-bottom:.75rem"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="reset-btn">Save password</button>
+    </form>
+    <p style="margin-top:1rem;text-align:center;font-size:.85rem"><a href="index.html">Back to sign in</a></p>
+  </div>
+
+  <script src="js/deployment.js"></script>
+  <script src="js/config.js"></script>
+  <script src="js/reset.js"></script>
+</body>
+</html>

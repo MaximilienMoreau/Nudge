@@ -22,7 +22,7 @@
       </div>
       <div>
         <div class="p-header-name">Nudge</div>
-        <div class="p-header-tag">Email Intelligence</div>
+        <div class="p-header-tag">Know when your emails are read</div>
       </div>
     </div>
     <div class="p-status-chip">
@@ -116,9 +116,12 @@
         <!-- Logged IN view -->
         <div id="logged-view" class="hidden">
           <div class="p-section-header">
-            <span class="p-section-title">Status</span>
+            <span class="p-section-title">Recent emails</span>
           </div>
           <div class="p-body">
+            <p class="p-list-message" id="recent-message" role="status">Loading…</p>
+            <div class="p-email-list" id="recent-list"></div>
+
             <!-- User block -->
             <div class="p-user-block">
               <div class="p-user-avatar">U</div>
@@ -132,8 +135,8 @@
             <div class="p-tip" id="tip-supported">
               ✅ Nudge is active on this page. Open a compose window — the tracking panel will appear inline next to Send.
             </div>
-            <div class="p-tip warn hidden" id="tip-fallback">
-              ⚠️ Direct injection isn't supported here. Use the web dashboard to track emails manually.
+            <div class="p-tip hidden" id="tip-fallback">
+              Open your webmail in this tab to track emails. Not supported here? Use the dashboard.
             </div>
 
             <a id="dashboard-link" href="#" target="_blank" class="p-btn p-btn-primary">
@@ -143,7 +146,6 @@
                 <polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/>
               </svg>
             </a>
-            <button class="p-btn p-btn-ghost" data-action="logout">Sign Out</button>
           </div>
         </div>
 
@@ -180,6 +182,35 @@
             <button class="p-save-btn" id="save-server-btn">Save</button>
           </div>
           <p id="server-status" role="status" class="p-error"></p>
+        </div>
+        <div class="p-section-header">
+          <span class="p-section-title">Notifications</span>
+        </div>
+        <div class="p-body">
+          <label class="p-check">
+            <input type="checkbox" id="notifications-toggle"/>
+            Notify me when an email is opened
+          </label>
+        </div>
+        <div class="p-section-header">
+          <span class="p-section-title">Privacy</span>
+        </div>
+        <div class="p-body">
+          <label class="p-check">
+            <input type="checkbox" id="content-toggle"/>
+            Store the text of my emails (for AI follow-ups)
+          </label>
+        </div>
+        <div class="p-section-header">
+          <span class="p-section-title">Problem with a webmail?</span>
+        </div>
+        <div class="p-body">
+          <p style="font-size:.75rem;color:var(--muted);margin-bottom:.75rem;line-height:1.5">
+            Open a new message, then copy its structure to report the problem. Texts, names and
+            addresses are masked; nothing is sent.
+          </p>
+          <button class="p-btn p-btn-secondary" id="describe-btn">Copy page structure</button>
+          <textarea class="p-structure hidden" id="describe-result" readonly aria-label="Page structure"></textarea>
         </div>
       </div>
 

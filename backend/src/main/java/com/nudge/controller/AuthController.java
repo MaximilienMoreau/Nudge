@@ -5,12 +5,16 @@ import com.nudge.dto.DeleteAccountRequest;
 import com.nudge.dto.LoginRequest;
 import com.nudge.dto.PasswordChangeRequest;
 import com.nudge.dto.RegisterRequest;
+import com.nudge.dto.ForgotPasswordRequest;
+import com.nudge.dto.ResetPasswordRequest;
 import com.nudge.service.AuthService;
+import com.nudge.service.PasswordResetService;
 import com.nudge.security.SecurityConstants;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -31,6 +35,7 @@ import java.util.Map;
 public class AuthController {
 
     private final AuthService authService;
+    private final PasswordResetService passwordResetService;
 
     @Value("${jwt.expiration:86400000}")
     private long jwtExpirationMs;
@@ -51,8 +56,9 @@ public class AuthController {
         }
     }
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, PasswordResetService passwordResetService) {
         this.authService = authService;
+        this.passwordResetService = passwordResetService;
     }
 
     /** POST /api/auth/register — Create a new account (public). */
@@ -69,8 +75,26 @@ public class AuthController {
     public ResponseEntity<AuthResponse> login(@Valid @RequestBody LoginRequest request,
                                               HttpServletResponse response) {
         AuthResponse auth = authService.login(request);
-        setAuthCookie(response, auth.getToken());
+        if (!request.isRememberMe()) setAuthCookie(response, auth.getToken());
         return ResponseEntity.ok(auth);
+    }
+
+    /** POST /api/auth/forgot-password — Same answer whether or not the account exists (public). */
+    @PostMapping("/forgot-password")
+    public ResponseEntity<Map<String, String>> forgotPassword(@Valid @RequestBody ForgotPasswordRequest request) {
+        if (!passwordResetService.isAvailable()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                    .body(Map.of("error", "This server cannot send emails: ask its administrator"));
+        }
+        passwordResetService.request(request.email());
+        return ResponseEntity.ok(Map.of("message", "If this account exists, a link has been sent"));
+    }
+
+    /** POST /api/auth/reset-password — Set a new password with an emailed token (public). */
+    @PostMapping("/reset-password")
+    public ResponseEntity<Map<String, String>> resetPassword(@Valid @RequestBody ResetPasswordRequest request) {
+        passwordResetService.reset(request.token(), request.newPassword());
+        return ResponseEntity.ok(Map.of("message", "Password changed"));
     }
 
     /**

@@ -36,6 +36,9 @@ public class JwtUtil {
     @Value("${jwt.expiration}")
     private long expirationMs;
 
+    @Value("${jwt.remember-expiration}")
+    private long rememberExpirationMs;
+
     /** Cached signing key — derived once at startup. */
     private SecretKey signingKey;
 
@@ -47,12 +50,21 @@ public class JwtUtil {
 
     /** Generate a signed JWT for the given user, embedding the tokenVersion. */
     public String generateToken(Long userId, String email, int tokenVersion) {
+        return generateToken(userId, email, tokenVersion, expirationMs);
+    }
+
+    /** Same as generateToken, for a client that stays signed in. Revoked the same way. */
+    public String generateRememberedToken(Long userId, String email, int tokenVersion) {
+        return generateToken(userId, email, tokenVersion, rememberExpirationMs);
+    }
+
+    private String generateToken(Long userId, String email, int tokenVersion, long lifetimeMs) {
         return Jwts.builder()
                 .subject(email)
                 .claim("userId", userId)
                 .claim("tokenVersion", tokenVersion)         // token version
                 .issuedAt(new Date())
-                .expiration(new Date(System.currentTimeMillis() + expirationMs))
+                .expiration(new Date(System.currentTimeMillis() + lifetimeMs))
                 .signWith(signingKey, Jwts.SIG.HS256)
                 .compact();
     }

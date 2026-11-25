@@ -454,20 +454,28 @@ body {
 
 .p-save-btn:hover { box-shadow: 0 3px 10px rgba(99,102,241,.3); }
 
-/* ── Email card list (ready for future "Recent" tab) ─────── */
+/* ── Email card list ──────────────────────────────────────── */
+.p-list-message { font-size: .75rem; color: var(--muted); margin-bottom: .65rem; }
+
 .p-email-list {
+  max-height: 235px;
+  overflow-y: auto;
+  margin-bottom: .65rem;
   display: flex;
   flex-direction: column;
   gap: .35rem;
 }
 
 .p-email-card {
+  flex-shrink: 0;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: .6rem .75rem;
   cursor: pointer;
   transition: all .2s;
+  color: inherit;
+  text-decoration: none;
 }
 
 .p-email-card:hover {
@@ -508,6 +516,33 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+
+.p-email-time { font-size: .68rem; color: var(--muted); white-space: nowrap; margin-left: .5rem; }
+
+.p-read-badge {
+  padding: .05rem .45rem;
+  border-radius: 999px;
+  font-size: .66rem;
+  font-weight: 600;
+  white-space: nowrap;
+  color: #94a3b8;
+  background: rgba(100,116,139,.15);
+}
+.p-read-badge.unconfirmed { color: var(--primary-light); background: rgba(99,102,241,.14); }
+.p-read-badge.opened      { color: #4ade80; background: rgba(34,197,94,.14); }
+
+.p-structure {
+  width: 100%;
+  height: 90px;
+  padding: .4rem;
+  background: rgba(8,12,24,.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font: .65rem monospace;
+}
+
+.p-check { display: flex; align-items: center; gap: .5rem; font-size: .78rem; cursor: pointer; }
 
 /* ── Score pill ────────────────────────────────────────────── */
 .p-score-pill {

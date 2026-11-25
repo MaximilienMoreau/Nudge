@@ -1,7 +1,7 @@
 /**
  * content.js — Nudge Multi-Platform Email Tracker
  *
- * Supported platforms: Gmail, Outlook Web, Proton Mail, Infomaniak Mail, Yahoo Mail
+ * Supported platforms: Gmail, Outlook Web, Proton Mail, Tuta, Infomaniak Mail, Yahoo Mail
  *
  * Architecture: platform-adapter pattern
  *   - Each email client has its own adapter with DOM selectors.
@@ -30,12 +30,98 @@ const PLATFORM = (() => {
   if (h.endsWith('outlook.office365.com')) return 'outlook';
   if (h === 'mail.proton.me')              return 'protonmail';
   if (h === 'mail.protonmail.com')         return 'protonmail';
+  if (h === 'app.tuta.com')                return 'tuta';
+  if (h === 'mail.tutanota.com')           return 'tuta';
   if (h === 'mail.infomaniak.com')         return 'infomaniak';
   if (h === 'mail.yahoo.com')              return 'yahoo';
   return null;
 })();
 
 console.log(`[Nudge] content script — platform: ${PLATFORM ?? 'unsupported'}`);
+
+// ── Shared detection (English and French interfaces) ──────────
+
+const EMAIL = /[^\s@;,<>()"]+@[^\s@;,<>()"]+\.[^\s@;,<>()"]+/g;
+const SUBJECT_FIELD = 'input[name="subject"], input[aria-label*="subject" i], input[aria-label*="objet" i], ' +
+  'input[placeholder*="subject" i], input[placeholder*="objet" i]';
+
+function labelsOf(el) {
+  return ['aria-label', 'title', 'data-tooltip'].map(name => el.getAttribute(name)).concat(el.textContent)
+    // Gmail wraps shortcuts in invisible direction marks
+    .map(label => (label ?? '').replace(/[\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').replace(/\s+/g, ' ').trim().toLowerCase());
+}
+
+/** "Send", "Envoyer (Ctrl+Entrée)"… but not "Send later" or "Envoyer un commentaire". */
+function isSendLabel(label) {
+  return /^(send|envoyer)( (the |le |l['’])?(e-?mail|mail|message))?( ?\(.*\))?$/.test(label);
+}
+
+/** "Send & archive", "Envoyer et archiver"… */
+function isSendVariantLabel(label) {
+  return /^(send|envoyer)( and | et | ?[&+] ?)(archive|archiver)\b/.test(label);
+}
+
+/** Title of the window or menu that schedules a message. */
+function isScheduleLabel(label) {
+  return /^(schedule send|programmer l['’]envoi|planifier l['’]envoi)/i.test(label.trim());
+}
+
+/** "To", "À", "Cc recipients", "Destinataires"… */
+function isRecipientLabel(label) {
+  return /^(to|cc|bcc|à|a|pour|cci|destinataires?)( recipients?| \(?obligatoire\)?)?\s*:?$/.test(label);
+}
+
+/** The message editor. Recipient fields can be editable too (Outlook). */
+function findEditor(root) {
+  const editors = [...root.querySelectorAll('[contenteditable="true"]')]
+    .filter(el => !isRecipientLabel((el.getAttribute('aria-label') ?? '').trim().toLowerCase()))
+    .filter(el => !/^(subject|objet)/i.test(el.getAttribute('aria-label') ?? ''));
+  return editors.find(el => /message|body|corps/i.test(el.getAttribute('aria-label') ?? '')) ?? editors.at(-1) ?? null;
+}
+
+/** Smallest element that holds the button, a subject field and an editor. */
+function composeRootOf(sendBtn) {
+  for (let el = sendBtn.parentElement; el && el !== document.body; el = el.parentElement) {
+    if (el.querySelector(SUBJECT_FIELD) && findEditor(el)) return el;
+  }
+  return null;
+}
+
+/** Compose windows found from their Send button, whatever the layout. */
+function findByStructure(buttonSelector, fallbackSelector) {
+  const found = [];
+  document.querySelectorAll(buttonSelector).forEach(sendBtn => {
+    if (!labelsOf(sendBtn).some(isSendLabel)) return;
+    const container = composeRootOf(sendBtn) ?? sendBtn.closest(fallbackSelector);
+    if (container) found.push({ container, sendBtn });
+  });
+  // A Send button outside any compose window reaches a root that holds a real one.
+  return found.filter(({ container }) =>
+    !found.some(other => other.container !== container && container.contains(other.container)));
+}
+
+/** Addresses shown in the recipient fields: text, title, aria-label or value. */
+function recipientsFromFields(root) {
+  const emails = new Set();
+  const fields = [...root.querySelectorAll('[aria-label]')]
+    .filter(field => isRecipientLabel(field.getAttribute('aria-label').trim().toLowerCase()))
+    .concat(...root.querySelectorAll('[class*="RECIPIENT_ENTITY"], [class*="wellItem" i]'));
+  fields.forEach(field => {
+    for (const el of [field, ...field.querySelectorAll('*')]) {
+      const text = [el.value, el.getAttribute('title'), el.getAttribute('aria-label'), el.children.length ? '' : el.textContent].join(' ');
+      (text.match(EMAIL) ?? []).forEach(email => emails.add(email.toLowerCase()));
+    }
+  });
+  return [...emails];
+}
+
+function insertPixel(editor, url) {
+  if (!editor) return false;
+  editor.querySelectorAll('.nudge-pixel').forEach(pixel => pixel.remove());
+  editor.appendChild(buildPixelImg(url));
+  editor.dispatchEvent(new Event('input', { bubbles: true }));
+  return true;
+}
 
 // ── Platform adapters ──────────────────────────────────────────
 //
@@ -54,36 +140,34 @@ const ADAPTERS = {
     findComposeWindows() {
       const found = [];
       document.querySelectorAll('.aoO[role="button"], [data-tooltip^="Send"], [data-tooltip^="Envoyer"]').forEach(sendBtn => {
-        const container = sendBtn.closest('div[role="dialog"], .nH.Hd');
-        if (container) found.push({ container, sendBtn });
+        // .M9 is the root of both new messages and replies written in a conversation
+        const container = sendBtn.closest('div.M9') ?? sendBtn.closest('div[role="dialog"], .nH.Hd');
+        if (container && labelsOf(sendBtn).some(isSendLabel)) found.push({ container, sendBtn });
       });
       return found;
     },
     extractSubject(c) {
-      return c.querySelector('input[name="subjectbox"]')?.value.trim() ?? '';
+      const subject = c.querySelector('input[name="subjectbox"]')?.value.trim();
+      // A reply may have no subject field: use the conversation's title
+      return subject || (this.isReply(c) ? document.querySelector('h2.hP')?.textContent.trim() : '') || '';
+    },
+    isReply(c) {
+      return c.closest('.AO') !== null; // the reading area, as opposed to a compose window
     },
     extractRecipients(c) {
       const emails = new Set();
-      c.querySelectorAll('[data-hovercard-id]').forEach(chip => {
-        const h = chip.getAttribute('data-hovercard-id') ?? '';
-        if (h.includes('@')) emails.add(h);
+      const inEditor = el => el.closest('[contenteditable="true"][role="textbox"]'); // mentions are not recipients
+      const collect = (selector, read) => c.querySelectorAll(selector).forEach(el => {
+        if (!inEditor(el)) (read(el)?.match(EMAIL) ?? []).forEach(email => emails.add(email.toLowerCase()));
       });
-      if (emails.size) return [...emails];
-
-      const toInput = c.querySelector('[aria-label="To"], [name="to"]');
-      if (toInput?.value) {
-        toInput.value.split(',').forEach(e => {
-          const t = e.trim();
-          if (t.includes('@')) emails.add(t);
-        });
-        if (emails.size) return [...emails];
+      const chip = el => el.getAttribute('data-hovercard-id');
+      for (const field of ['to', 'cc', 'bcc']) {
+        collect(`[name="${field}"] [data-hovercard-id]`, chip);
+        collect(`input[name="${field}"], textarea[name="${field}"], [name="${field}"] input`, el => el.value);
       }
-
-      const toArea = c.querySelector('.vO');
-      if (toArea) {
-        const matches = toArea.innerText.match(/[^\s@,]+@[^\s@,]+\.[^\s@,]+/g) ?? [];
-        matches.forEach(m => emails.add(m));
-      }
+      if (!emails.size) collect('[email]', el => el.getAttribute('email')); // collapsed fields of a reply
+      if (!emails.size) collect('[data-hovercard-id]', chip);
+      if (!emails.size) collect('.vO', el => el.innerText);
       return [...emails];
     },
     extractBody(c) {
@@ -106,21 +190,15 @@ const ADAPTERS = {
   // ── Outlook Web (live / office / office365) ──────────────────
   outlook: {
     findComposeWindows() {
-      const found = [];
-      // Outlook renders a Send button with aria-label "Send" in the compose toolbar
-      document.querySelectorAll(
-        'button[aria-label="Send"], button[title="Send"], button[data-testid="compose-send-button"]'
-      ).forEach(sendBtn => {
-        const container = sendBtn.closest(
-          '[role="dialog"], [class*="compose"], [class*="Compose"], [class*="draftArea"]'
-        );
-        if (container) found.push({ container, sendBtn });
-      });
-      return found;
+      return findByStructure(
+        'button[aria-label^="Send" i], button[title^="Send" i], button[aria-label^="Envoyer" i], ' +
+        'button[title^="Envoyer" i], button[data-testid="compose-send-button"]',
+        '[role="dialog"], [class*="compose"], [class*="Compose"], [class*="draftArea"]'
+      );
     },
     extractSubject(c) {
       return (
-        c.querySelector('input[aria-label*="ubject"], input[placeholder*="ubject"]')?.value.trim() ?? ''
+        c.querySelector(SUBJECT_FIELD)?.value.trim() ?? ''
       );
     },
     extractRecipients(c) {
@@ -129,29 +207,16 @@ const ADAPTERS = {
         .forEach(chip => {
           const txt = chip.getAttribute('title') || chip.textContent;
           const m = txt?.match(/[^\s@;]+@[^\s@;]+\.[^\s@;]+/);
-          if (m) emails.add(m[0]);
+          if (m) emails.add(m[0].toLowerCase());
         });
-      if (emails.size) return [...emails];
-
-      const toInput = c.querySelector('[aria-label="To"], input[placeholder*="To"]');
-      if (toInput) {
-        const text = toInput.value || toInput.innerText || '';
-        (text.match(/[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+/g) ?? []).forEach(e => emails.add(e));
-      }
+      recipientsFromFields(c).forEach(email => emails.add(email));
       return [...emails];
     },
     extractBody(c) {
-      return (
-        c.querySelector('[contenteditable="true"], [role="textbox"]')?.innerText.trim() ?? ''
-      );
+      return findEditor(c)?.innerText.trim() ?? '';
     },
     injectPixel(c, url) {
-      const body = c.querySelector('[contenteditable="true"], [role="textbox"]');
-      if (!body) return false;
-      body.querySelector('.nudge-pixel')?.remove();
-      body.appendChild(buildPixelImg(url));
-      body.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
+      return insertPixel(findEditor(c), url);
     },
     getSidebarRoot(c) {
       // Insert into the command/toolbar bar at the bottom of the compose area
@@ -162,15 +227,13 @@ const ADAPTERS = {
   },
 
   // ── Proton Mail (mail.proton.me / mail.protonmail.com) ────────
-  // Note: Proton Mail recipients who have "block remote images" enabled
-  // will not trigger the pixel. External recipients are unaffected.
+  // Selectors taken from Proton's published source (ProtonMail/WebClients, mail-composer).
   protonmail: {
+    settleMs: 200,
     findComposeWindows() {
       const found = [];
       document.querySelectorAll('button[data-testid="composer:send-button"]').forEach(sendBtn => {
-        const container = sendBtn.closest(
-          '[data-testid="composer-container"], [class*="composer"], [class*="Composer"]'
-        );
+        const container = sendBtn.closest('section.composer');
         if (container) found.push({ container, sendBtn });
       });
       return found;
@@ -178,86 +241,104 @@ const ADAPTERS = {
     extractSubject(c) {
       return c.querySelector('input[data-testid="composer:subject"]')?.value.trim() ?? '';
     },
+    /** Outside the address fields, Proton only shows names: open them to read the address. */
+    async prepare(c) {
+      const summary = c.querySelector('[data-testid="composer:address"] [role="button"]');
+      if (!summary || this.summaryLabels(c).length !== 1) return;
+      summary.click();
+      for (let tries = 0; tries < 20 && !c.querySelector('[data-testid="composer:to-field"] .composer-addresses-item'); tries++) {
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+    },
+    summaryLabels(c) {
+      return [...c.querySelectorAll('[data-testid="composer:address"] [role="button"] > span.align-top')]
+        .map(label => label.textContent.replace(/,$/, '').trim());
+    },
+    extractRecipients(c) {
+      const recipients = new Set(this.summaryLabels(c).map(label => label.match(EMAIL)?.[0].toLowerCase() ?? label));
+      const items = [...c.querySelectorAll('.composer-addresses-item')];
+      items.forEach((item, index) => {
+        const address = item.querySelector('[data-testid^="remove-address-button-"]')
+          ?.getAttribute('data-testid').slice('remove-address-button-'.length).toLowerCase();
+        if (address) recipients.add(address);
+        // A contact group holds several people and shows none of their addresses
+        else recipients.add(`group ${index} a`).add(`group ${index} b`);
+      });
+      // Typed but not yet turned into a recipient
+      c.querySelectorAll('[data-testid="composer:to"], [data-testid="composer:to-cc"], [data-testid="composer:to-bcc"]')
+        .forEach(input => (input.value?.match(EMAIL) ?? []).forEach(email => recipients.add(email.toLowerCase())));
+      return [...recipients];
+    },
+    editor(c) {
+      const iframe = c.querySelector('iframe[data-testid="rooster-iframe"]');
+      try { return iframe?.contentDocument?.querySelector('#rooster-editor') ?? null; }
+      catch { return null; }
+    },
+    extractBody(c) {
+      return this.editor(c)?.innerText.trim() ?? '';
+    },
+    injectPixel(c, url) {
+      return insertPixel(this.editor(c), url);
+    },
+    getSidebarRoot(c) {
+      return c.querySelector('footer.composer-actions') ?? c;
+    }
+  },
+
+  // ── Tuta (app.tuta.com) ───────────────────────────────────────
+  // Selectors taken from Tuta's published source (tutao/tutanota, MailEditor).
+  tuta: {
+    settleMs: 200,
+    findComposeWindows() {
+      const found = [];
+      // The header button becomes "send later" when a date is set
+      document.querySelectorAll('[data-testid="btn:send_action"], .dialog-header [data-testid="btn:sendLater_action"]').forEach(sendBtn => {
+        const container = sendBtn.closest('[role="dialog"]');
+        if (container?.querySelector('#mail-editor')) found.push({ container, sendBtn });
+      });
+      return found;
+    },
+    extractSubject(c) {
+      return c.querySelector('[data-testid="tfi:subject_label"]')?.value.trim() ?? '';
+    },
     extractRecipients(c) {
       const emails = new Set();
-      // Address chips expose the email in their title or a nested element
-      c.querySelectorAll(
-        '[data-testid="composer:to"] .composer-addresses-item, ' +
-        '[data-testid="composer:to"] [title], [data-testid="composer:cc"] [title], [data-testid="composer:bcc"] [title]'
-      ).forEach(el => {
-        const txt = el.getAttribute('title') || el.textContent || '';
-        const m = txt.match(/[^\s@;<>]+@[^\s@;<>]+\.[^\s@;<>]+/);
-        if (m) emails.add(m[0]);
-      });
-      if (emails.size) return [...emails];
-      const input = c.querySelector('input[placeholder*="Email address"]');
-      if (input?.value) {
-        (input.value.match(/[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+/g) ?? []).forEach(e => emails.add(e));
+      for (const field of ['to', 'cc', 'bcc']) {
+        // Each recipient is a button identified by its address
+        c.querySelectorAll(`[data-testid="tf:${field}_label"] [data-testid^="btn:"]`).forEach(bubble =>
+          (bubble.getAttribute('data-testid').match(EMAIL) ?? [])
+            .forEach(email => emails.add(email.replace(/^btn:/, '').toLowerCase())));
+        (c.querySelector(`[data-testid="tfi:${field}_label"]`)?.value.match(EMAIL) ?? [])
+          .forEach(email => emails.add(email.toLowerCase()));
       }
       return [...emails];
     },
+    editor(c) {
+      return c.querySelector('#mail-editor [data-testid="text_editor"]');
+    },
     extractBody(c) {
-      // Proton Mail uses a same-origin iframe for the editor (Rooster)
-      const iframe = c.querySelector('iframe.rooster-editor-iframe, iframe[title*="Email"]');
-      if (iframe) {
-        try {
-          return iframe.contentDocument?.querySelector('[contenteditable="true"]')?.innerText.trim() ?? '';
-        } catch { /* cross-origin guard */ }
-      }
-      return c.querySelector('[contenteditable="true"]')?.innerText.trim() ?? '';
+      return this.editor(c)?.innerText.trim() ?? '';
     },
     injectPixel(c, url) {
-      const iframe = c.querySelector('iframe.rooster-editor-iframe, iframe[title*="Email"]');
-      if (iframe) {
-        try {
-          const body = iframe.contentDocument?.querySelector('[contenteditable="true"]');
-          if (body) {
-            body.querySelector('.nudge-pixel')?.remove();
-            body.appendChild(buildPixelImg(url));
-            body.dispatchEvent(new Event('input', { bubbles: true }));
-            return true;
-          }
-        } catch { /* cross-origin guard */ }
-      }
-      // Fallback: top-level contenteditable (may not embed in sent email)
-      const body = c.querySelector('[contenteditable="true"]');
-      if (body) {
-        body.querySelector('.nudge-pixel')?.remove();
-        body.appendChild(buildPixelImg(url));
-        body.dispatchEvent(new Event('input', { bubbles: true }));
-        return true;
-      }
-      return false;
+      return insertPixel(this.editor(c), url);
     },
     getSidebarRoot(c) {
-      return (
-        c.querySelector(
-          '[data-testid="composer:actions"], [class*="ComposerActions"], [class*="composer-actions"]'
-        ) ?? c
-      );
-    }
+      return c.querySelector('#mail-editor');
+    },
+    panelFirst: true // the end of the editor can be far below the screen
   },
 
   // ── Infomaniak Mail (mail.infomaniak.com) ─────────────────────
   infomaniak: {
     findComposeWindows() {
-      const found = [];
-      document.querySelectorAll(
-        'button[title*="Send"], button[aria-label*="Send"], ' +
-        'button[data-action="send"], button.k-btn-compose-send'
-      ).forEach(sendBtn => {
-        const container = sendBtn.closest(
-          '[class*="compose"], [class*="Compose"], [role="dialog"], form[class*="mail"]'
-        );
-        if (container) found.push({ container, sendBtn });
-      });
-      return found;
+      return findByStructure(
+        'button',
+        '[class*="compose"], [class*="Compose"], [role="dialog"], form[class*="mail"]'
+      );
     },
     extractSubject(c) {
       return (
-        c.querySelector(
-          'input[name="subject"], input[placeholder*="ubject"], input[aria-label*="ubject"]'
-        )?.value.trim() ?? ''
+        c.querySelector(SUBJECT_FIELD)?.value.trim() ?? ''
       );
     },
     extractRecipients(c) {
@@ -265,27 +346,19 @@ const ADAPTERS = {
       c.querySelectorAll('[class*="recipient"] [title], [class*="to-field"] [title]').forEach(el => {
         const txt = el.getAttribute('title') || el.textContent || '';
         const m = txt.match(/[^\s@;,<>]+@[^\s@;,<>]+\.[^\s@;,<>]+/);
-        if (m) emails.add(m[0]);
+        if (m) emails.add(m[0].toLowerCase());
       });
+      recipientsFromFields(c).forEach(email => emails.add(email));
       if (emails.size) return [...emails];
-      const input = c.querySelector('input[aria-label*="To"], input[name="to"], input[placeholder*="To"]');
-      if (input?.value) {
-        (input.value.match(/[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+/g) ?? []).forEach(e => emails.add(e));
-      }
+      const input = c.querySelector('input[name="to"], input[placeholder="To" i], input[placeholder="À" i], input[placeholder*="destinataire" i]');
+      (input?.value.match(EMAIL) ?? []).forEach(email => emails.add(email.toLowerCase()));
       return [...emails];
     },
     extractBody(c) {
-      return (
-        c.querySelector('[contenteditable="true"], [role="textbox"], .note-editable')?.innerText.trim() ?? ''
-      );
+      return (findEditor(c) ?? c.querySelector('.note-editable'))?.innerText.trim() ?? '';
     },
     injectPixel(c, url) {
-      const body = c.querySelector('[contenteditable="true"], [role="textbox"], .note-editable');
-      if (!body) return false;
-      body.querySelector('.nudge-pixel')?.remove();
-      body.appendChild(buildPixelImg(url));
-      body.dispatchEvent(new Event('input', { bubbles: true }));
-      return true;
+      return insertPixel(findEditor(c) ?? c.querySelector('.note-editable'), url);
     },
     getSidebarRoot(c) {
       return (
@@ -299,8 +372,9 @@ const ADAPTERS = {
     findComposeWindows() {
       const found = [];
       document.querySelectorAll(
-        'button[data-test-id="btn-send"], button[aria-label="Send Email"], button[aria-label="Send"]'
+        'button[data-test-id="btn-send"], button[aria-label="Send Email"], button[aria-label="Send"], button[aria-label^="Envoyer"]'
       ).forEach(sendBtn => {
+        if (!sendBtn.matches('[data-test-id="btn-send"]') && !labelsOf(sendBtn).some(isSendLabel)) return;
         const container = sendBtn.closest(
           '[data-test-id="compose-view"], [class*="compose"], [role="dialog"]'
         );
@@ -311,7 +385,7 @@ const ADAPTERS = {
     extractSubject(c) {
       return (
         c.querySelector(
-          'input[data-test-id="compose-subject"], input[placeholder*="ubject"]'
+          'input[data-test-id="compose-subject"], ' + SUBJECT_FIELD
         )?.value.trim() ?? ''
       );
     },
@@ -326,7 +400,7 @@ const ADAPTERS = {
         if (m) emails.add(m[0]);
       });
       if (emails.size) return [...emails];
-      const input = c.querySelector('[data-test-id="yui-to"] input, input[aria-label*="To"]');
+      const input = c.querySelector('[data-test-id="yui-to"] input, input[aria-label="To"], input[aria-label="À"]');
       if (input?.value) {
         (input.value.match(/[^\s@;,]+@[^\s@;,]+\.[^\s@;,]+/g) ?? []).forEach(e => emails.add(e));
       }
@@ -336,7 +410,7 @@ const ADAPTERS = {
       return (
         c.querySelector(
           '[data-test-id="rte"] [contenteditable="true"], ' +
-          '[aria-label*="Body"][contenteditable="true"], ' +
+          '[aria-label*="Body"][contenteditable="true"], [aria-label*="Corps"][contenteditable="true"], ' +
           '[class*="editor"] [contenteditable="true"]'
         )?.innerText.trim() ?? ''
       );
@@ -344,7 +418,7 @@ const ADAPTERS = {
     injectPixel(c, url) {
       const body = c.querySelector(
         '[data-test-id="rte"] [contenteditable="true"], ' +
-        '[aria-label*="Body"][contenteditable="true"], ' +
+        '[aria-label*="Body"][contenteditable="true"], [aria-label*="Corps"][contenteditable="true"], ' +
         '[class*="editor"] [contenteditable="true"]'
       );
       if (!body) return false;
@@ -372,6 +446,24 @@ if (!adapter) {
 } else {
   const mounted = new Map();
   let scanPending = false;
+
+  // The scheduling window is outside the compose window: remember which one was used last.
+  let lastUsed = null;
+  window.addEventListener('mousedown', event => {
+    for (const container of mounted.keys()) if (container.contains(event.target)) lastUsed = container;
+  }, true);
+  let scheduling = false;
+  function watchScheduling() {
+    const open = [...document.querySelectorAll('[role="dialog"], [data-testid="composer:schedule-send:dropdown-title"]')]
+      .some(el => ![...mounted.keys()].some(container => el.contains(container)) && el.getClientRects().length > 0 &&
+        isScheduleLabel(el.getAttribute('aria-label') || el.textContent.slice(0, 80)));
+    if (open && !scheduling) {
+      const state = mounted.get(lastUsed) ?? (mounted.size === 1 ? [...mounted.values()][0] : null);
+      state?.prepareSchedule();
+    }
+    scheduling = open;
+  }
+
   function scan() {
     scanPending = false;
     for (const [container, state] of mounted) {
@@ -382,8 +474,9 @@ if (!adapter) {
     }
     adapter.findComposeWindows().forEach(({ container, sendBtn }) => {
       if (mounted.has(container)) return;
-      mounted.set(container, { sendBtn, cleanup: mountSidebar(container, sendBtn) });
+      mounted.set(container, { sendBtn, ...mountSidebar(container, sendBtn) });
     });
+    watchScheduling();
   }
   new MutationObserver(() => {
     if (!scanPending) {
@@ -398,11 +491,12 @@ if (!adapter) {
 
 // ── Nudge Sidebar (shared UI) ──────────────────────────────────
 
+let panelCount = 0;
 function mountSidebar(container, sendBtn) {
   ensureStyles();
 
   // ── Build panel ──
-  const uid = `nudge-${Date.now()}`;
+  const uid = `nudge-${++panelCount}`;
   const panel = document.createElement('div');
   panel.className = 'nudge-panel';
   panel.innerHTML = `
@@ -415,16 +509,20 @@ function mountSidebar(container, sendBtn) {
     </div>
     <div class="nudge-panel-body">
       <div class="nudge-pill nudge-on" id="${uid}-status">Tracking ON</div>
-      <div class="nudge-hint">
-        <div class="nudge-hint-label">⏰ Best send time</div>
+      <input class="nudge-manual" id="${uid}-manual" type="email" placeholder="Recipient's email address" hidden>
+      <details class="nudge-hint" id="${uid}-hint">
+        <summary class="nudge-hint-label">Best send time</summary>
         <div class="nudge-hint-val" id="${uid}-sendtime">Loading…</div>
-      </div>
+      </details>
     </div>
   `;
 
   const checkbox  = panel.querySelector(`#${uid}-chk`);
   const statusPill = panel.querySelector(`#${uid}-status`);
   const sendtimeEl = panel.querySelector(`#${uid}-sendtime`);
+  const manual     = panel.querySelector(`#${uid}-manual`);
+  // Keep the webmail's keyboard shortcuts from reacting to what is typed here
+  for (const type of ['keydown', 'keypress', 'keyup', 'paste', 'input']) manual.addEventListener(type, event => event.stopPropagation());
 
   // Toggle tracking on/off
   checkbox.addEventListener('change', () => {
@@ -436,24 +534,76 @@ function mountSidebar(container, sendBtn) {
 
   // Mount panel
   const root = adapter.getSidebarRoot(container);
-  root.appendChild(panel);
+  if (adapter.panelFirst) root.prepend(panel);
+  else root.appendChild(panel);
 
-  // Fetch send-time suggestion in background
-  chrome.runtime.sendMessage({ type: 'GET_SEND_TIME' })
-    .then(r => { if (sendtimeEl) sendtimeEl.textContent = r?.suggestion ?? 'No data yet'; })
-    .catch(() => { if (sendtimeEl) sendtimeEl.textContent = 'No data yet'; });
+  // Asked only when the user opens the section, once per compose window.
+  panel.querySelector(`#${uid}-hint`).addEventListener('toggle', () => {
+    chrome.runtime.sendMessage({ type: 'GET_SEND_TIME' })
+      .then(r => { sendtimeEl.textContent = r?.suggestion ?? 'No data yet'; })
+      .catch(() => { sendtimeEl.textContent = 'No data yet'; });
+  }, { once: true });
 
   // Capture before the webmail's normal send handler; replay only after injection.
   let pending = false;
   let replaying = false;
   function snapshot() {
+    const found = adapter.extractRecipients(container);
+    // The address typed in the panel only fills in for one that the webmail does not show
+    const typed = found.length || manual.hidden ? [] : manual.value.match(EMAIL) ?? [];
     return {
       subject: adapter.extractSubject(container),
-      recipientEmails: adapter.extractRecipients(container),
+      recipientEmails: found.length ? found : typed.map(email => email.toLowerCase()),
       content: adapter.extractBody(container)
     };
   }
-  async function interceptSend(event) {
+  function setStatus(text, kind) {
+    statusPill.textContent = text;
+    statusPill.className = `nudge-pill nudge-${kind}`;
+  }
+  function replay(button) {
+    replaying = true;
+    try { button.click(); } finally { replaying = false; }
+  }
+  /** Registers the email and adds the pixel to the draft; throws with a readable message. */
+  async function track(payload) {
+    if (!payload.subject) payload.subject = '(no subject)';
+    const before = JSON.stringify(snapshot());
+    const res = await chrome.runtime.sendMessage({ type: 'REGISTER_EMAIL', payload });
+    if (!container.isConnected) return false;
+    if (!res?.success || res.results?.length !== 1) {
+      throw new Error(res?.error || 'Could not prepare tracking. Retry or turn tracking OFF.');
+    }
+    if (before !== JSON.stringify(snapshot()) || !checkbox.checked) {
+      throw new Error('Draft changed. Review it and press Send again.');
+    }
+    if (!adapter.injectPixel(container, res.results[0].trackingPixelUrl)) {
+      throw new Error('Editor unavailable. Turn tracking OFF to send.');
+    }
+    return true;
+  }
+  /** Scheduling cannot be held back: the pixel is added while the user picks a date. */
+  async function prepareSchedule() {
+    if (!checkbox.checked || pending) return;
+    pending = true;
+    try {
+      removeTrackingPixels(container);
+      await adapter.prepare?.(container);
+      const payload = snapshot();
+      if (payload.recipientEmails.length !== 1) {
+        throw new Error(payload.recipientEmails.length ? 'several recipients' : 'recipient not recognised');
+      }
+      setStatus('Preparing tracking…', 'pending');
+      if (await track(payload)) setStatus('Tracking prepared', 'on');
+    } catch (error) {
+      removeTrackingPixels(container);
+      setStatus('Not tracked if scheduled', 'off');
+      showNotice(`Scheduled message not tracked: ${error.message}`);
+    } finally {
+      pending = false;
+    }
+  }
+  async function interceptSend(event, button) {
     if (replaying) return;
     if (!checkbox.checked) {
       removeTrackingPixels(container);
@@ -463,33 +613,34 @@ function mountSidebar(container, sendBtn) {
     event.stopImmediatePropagation();
     if (pending) return;
     removeTrackingPixels(container);
+    if (adapter.prepare) {
+      pending = true;
+      try { await adapter.prepare(container); } finally { pending = false; }
+    }
     const payload = snapshot();
     if (payload.recipientEmails.length !== 1) {
-      statusPill.textContent = 'Use one recipient, or turn tracking OFF to send.';
+      const found = payload.recipientEmails.length;
+      if (adapter.isReply?.(container)) {
+        // Never hold back a reply to several people: send it, and say it is untracked.
+        replay(button);
+        showNotice(found ? 'Reply sent without tracking: several recipients.' : 'Reply sent without tracking: recipient not recognised.');
+        return;
+      }
+      statusPill.textContent = found
+        ? 'Use one recipient, or turn tracking OFF to send.'
+        : 'Recipient not recognised: type the address below, then Send. One recipient only.';
       statusPill.className = 'nudge-pill nudge-off';
+      if (!found) manual.hidden = false;
       return;
     }
-    if (!payload.subject) payload.subject = '(no subject)';
-    const before = JSON.stringify(snapshot());
     pending = true;
-    statusPill.textContent = 'Preparing tracking…';
-    statusPill.className = 'nudge-pill nudge-pending';
+    setStatus('Preparing tracking…', 'pending');
     try {
-      const res = await chrome.runtime.sendMessage({ type: 'REGISTER_EMAIL', payload });
-      if (!container.isConnected) return;
-      if (!res?.success || res.results?.length !== 1) {
-        throw new Error(res?.error || 'Could not prepare tracking. Retry or turn tracking OFF.');
-      }
-      if (before !== JSON.stringify(snapshot()) || !checkbox.checked) {
-        throw new Error('Draft changed. Review it and press Send again.');
-      }
-      if (!adapter.injectPixel(container, res.results[0].trackingPixelUrl)) {
-        throw new Error('Editor unavailable. Turn tracking OFF to send.');
-      }
-      statusPill.textContent = 'Tracking prepared';
-      statusPill.className = 'nudge-pill nudge-on';
-      replaying = true;
-      try { sendBtn.click(); } finally { replaying = false; }
+      if (!await track(payload)) return;
+      setStatus('Tracking prepared', 'on');
+      // Editors that keep their own copy of the message need time to take the pixel in
+      if (adapter.settleMs) await new Promise(resolve => setTimeout(resolve, adapter.settleMs));
+      replay(button);
     } catch (error) {
       removeTrackingPixels(container);
       statusPill.textContent = error.message;
@@ -498,26 +649,53 @@ function mountSidebar(container, sendBtn) {
       pending = false;
     }
   }
+  function clickedSendButton(event) {
+    if (event.type !== 'click') return null;
+    if (sendBtn === event.target || sendBtn.contains(event.target)) return sendBtn;
+    const other = event.target.closest?.('button, [role="button"]');
+    return other && container.contains(other) && labelsOf(other).some(isSendVariantLabel) ? other : null;
+  }
   const dispatch = event => {
-    if ((event.type === 'click' && (sendBtn === event.target || sendBtn.contains(event.target))) ||
-        (event.type === 'keydown' && event.key === 'Enter' && (event.ctrlKey || event.metaKey) && container.contains(event.target))) {
-      interceptSend(event);
-      return true;
-    }
-    return false;
+    const byKeyboard = event.type === 'keydown' && event.key === 'Enter' && (event.ctrlKey || event.metaKey) && container.contains(event.target);
+    const button = byKeyboard ? sendBtn : clickedSendButton(event);
+    if (!button) return false;
+    interceptSend(event, button);
+    return true;
   };
   sendInterceptors.add(dispatch);
-  return () => { sendInterceptors.delete(dispatch); panel.remove(); };
+  return { prepareSchedule, cleanup() { sendInterceptors.delete(dispatch); panel.remove(); } };
 }
 
 // ── Helpers ────────────────────────────────────────────────────
 
+const TRACKING_URL = /\/track\/open\/[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}/i;
+
+/**
+ * Also removes the pixels of quoted emails: reading a reply must not mark the emails
+ * it quotes as opened.
+ */
 function removeTrackingPixels(container) {
-  container.querySelectorAll('.nudge-pixel').forEach(pixel => pixel.remove());
+  const clean = root => root?.querySelectorAll('img').forEach(img => {
+    if (img.classList.contains('nudge-pixel') || TRACKING_URL.test(safeDecode(img.getAttribute('src') ?? ''))) img.remove();
+  });
+  clean(container);
   for (const iframe of container.querySelectorAll('iframe')) {
-    try { iframe.contentDocument?.querySelectorAll('.nudge-pixel').forEach(pixel => pixel.remove()); }
+    try { clean(iframe.contentDocument); }
     catch { /* another origin cannot be edited */ }
   }
+}
+
+function safeDecode(url) {
+  try { return decodeURIComponent(url); } catch { return url; }
+}
+
+function showNotice(text) {
+  const notice = document.createElement('div');
+  notice.className = 'nudge-notice';
+  notice.setAttribute('role', 'status');
+  notice.textContent = text;
+  document.body.appendChild(notice);
+  setTimeout(() => notice.remove(), 6000);
 }
 
 function buildPixelImg(url) {
@@ -584,6 +762,20 @@ function ensureStyles() {
     .nudge-off     { background: rgba(239,68,68,.15);  color: #f87171; }
     .nudge-pending { background: rgba(99,102,241,.15); color: #a5b4fc; }
 
+    .nudge-manual {
+      display: block;
+      width: 100%;
+      box-sizing: border-box;
+      margin-bottom: 6px;
+      padding: 4px 8px;
+      border: 1px solid #475569;
+      border-radius: 6px;
+      background: #0f172a;
+      color: #f1f5f9;
+      font: 12px system-ui, sans-serif;
+    }
+    .nudge-manual[hidden] { display: none; }
+
     /* Send-time hint */
     .nudge-hint-label {
       font-size: 10px;
@@ -591,11 +783,26 @@ function ensureStyles() {
       letter-spacing: .05em;
       color: #64748b;
       margin-bottom: 2px;
+      cursor: pointer;
     }
     .nudge-hint-val {
       font-size: 11px;
       font-weight: 600;
       color: #cbd5e1;
+    }
+
+    .nudge-notice {
+      position: fixed;
+      left: 50%;
+      bottom: 24px;
+      transform: translateX(-50%);
+      padding: 10px 16px;
+      border-radius: 8px;
+      background: #1e293b;
+      color: #f1f5f9;
+      font: 13px system-ui, sans-serif;
+      box-shadow: 0 2px 10px rgba(0,0,0,.4);
+      z-index: 2147483647;
     }
 
     /* Toggle switch */

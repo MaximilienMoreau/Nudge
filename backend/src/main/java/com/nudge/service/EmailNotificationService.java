@@ -37,6 +37,19 @@ public class EmailNotificationService {
         this.mailSender = mailSender;
     }
 
+    public boolean isEnabled() {
+        return enabled;
+    }
+
+    public void sendPasswordReset(String toEmail, String link, long validMinutes) {
+        send(
+            toEmail,
+            "Reset your Nudge password",
+            "Use this link to choose a new password. It works once, for " + validMinutes + " minutes:\n\n" + link +
+            "\n\nIf you did not ask for it, ignore this email: your password is unchanged."
+        );
+    }
+
     /** Notify the sender that their tracked email was opened. */
     public void sendOpenNotification(String toEmail, String emailSubject, String recipientEmail) {
         if (!enabled) return;

@@ -1,12 +1,16 @@
 {
   "manifest_version": 3,
   "name": "Nudge — Email Tracker",
-  "version": "1.3.0",
-  "description": "Get alerted the moment someone opens your email — no reply needed. Works on Gmail, Outlook, Proton Mail, Infomaniak, and Yahoo Mail. Compatible with Chrome and Edge.",
+  "version": "1.4.0",
+  "description": "Get alerted the moment someone opens your email — no reply needed. Works on Gmail, Outlook, Proton Mail, Tuta, Infomaniak, and Yahoo Mail. Compatible with Chrome and Edge.",
 
   "permissions": [
     "storage",
-    "activeTab"
+    "activeTab",
+    "alarms",
+    "scripting",
+    "notifications",
+    "declarativeNetRequestWithHostAccess"
   ],
 
   "optional_host_permissions": ["https://*/*", "http://127.0.0.1/*"],
@@ -18,8 +22,12 @@
     "https://outlook.office365.com/*",
     "https://mail.proton.me/*",
     "https://mail.protonmail.com/*",
+    "https://app.tuta.com/*",
+    "https://mail.tutanota.com/*",
     "https://mail.infomaniak.com/*",
     "https://mail.yahoo.com/*",
+    "https://*.googleusercontent.com/*",
+    "https://*.yusercontent.com/*",
     "http://localhost:8080/*"
   ],
 
@@ -36,11 +44,18 @@
         "https://outlook.office365.com/*",
         "https://mail.proton.me/*",
         "https://mail.protonmail.com/*",
+        "https://app.tuta.com/*",
+        "https://mail.tutanota.com/*",
         "https://mail.infomaniak.com/*",
         "https://mail.yahoo.com/*"
       ],
       "js": ["content.js"],
       "run_at": "document_start"
+    },
+    {
+      "matches": ["https://mail.google.com/*"],
+      "js": ["gmail-ticks.js"],
+      "run_at": "document_idle"
     }
   ],
 

@@ -41,7 +41,14 @@ Bearer clients remain supported without cookie-based CSRF protection.
 Load `extension/` in Chrome or Edge, open the popup, enter the HTTPS backend origin
 and click Save. Grant access to that server when the browser prompts. Changing
 servers clears locally stored credentials; sign in to the new server.
-Add the extension's origin to the backend's `CORS_ALLOWED_ORIGINS` when needed.
+Add the extension's origin (`chrome-extension://<id>`, see `chrome://extensions`) to the
+backend's `CORS_ALLOWED_ORIGINS`: sign-in is refused without it. The id of an unpacked
+extension depends on its folder, so each installation has its own.
+
+The extension signs in with a 30-day bearer token (`JWT_REMEMBER_EXPIRATION_MS`), stored
+in the browser profile and revoked by a sign-out or a password change. It polls the
+server once a minute per signed-in browser, plus once a minute per visible Gmail Sent
+list. The dashboard cookie still lasts 24 hours.
 
 Tracking is limited to one recipient per compose window. To send to several people,
 turn tracking off or send separate messages. The API accepts batch creation for
@@ -52,11 +59,17 @@ record from the previous preparation; it can be archived from the dashboard.
 
 ## Database and migration
 
-Back up the database before upgrading. Flyway applies V1–V5 automatically under
+Back up the database before upgrading. Flyway applies V1–V7 automatically under
 `prod`; Hibernate validates the resulting schema. V5 expands subjects to 500 characters
-and adds an index for genuine-event counts and latest-event lookups.
+and adds an index for genuine-event counts and latest-event lookups. V6 records why an
+event is not counted as a read, and the IP and User-Agent that registered each email.
+Existing events are not reclassified. V7 adds password reset: only a
+hash of the emailed token is stored.
 Use an empty database for first deployment. If adopting an existing schema, review
 the Flyway baseline and column definitions before starting the production application.
+
+Keep the server in UTC (the Docker default): dates are sent without a zone and the
+engagement score assumes UTC.
 
 ## Notifications and scaling
 

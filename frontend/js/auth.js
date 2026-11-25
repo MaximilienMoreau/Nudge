@@ -51,6 +51,30 @@ async function handleLogin(e) {
   }
 }
 
+// ── Forgot password ───────────────────────────────────────────
+
+async function handleForgotPassword() {
+  const input  = document.getElementById('login-email');
+  const result = document.getElementById('forgot-result');
+  if (!input.value.trim() || !input.checkValidity()) {
+    result.textContent = 'Enter your email address above first.';
+    input.focus();
+    return;
+  }
+  result.textContent = 'Please wait…';
+  try {
+    const res = await fetch(`${NUDGE_CONFIG.API_BASE}/api/auth/forgot-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: input.value.trim() })
+    });
+    const data = await res.json();
+    result.textContent = data.message ?? data.error ?? 'Request failed';
+  } catch {
+    result.textContent = 'Cannot reach server. Is the backend running?';
+  }
+}
+
 // ── Register ──────────────────────────────────────────────────
 
 async function handleRegister(e) {

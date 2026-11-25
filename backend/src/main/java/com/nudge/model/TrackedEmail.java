@@ -70,4 +70,10 @@ public class TrackedEmail {
      * null = no reminder scheduled.
      */
     private LocalDateTime scheduledFollowUpAt;
+
+    /** IP and User-Agent that registered the email, used to ignore the sender's own pixel load. */
+    private String senderIp;
+
+    @Column(length = 512)
+    private String senderUserAgent;
 }

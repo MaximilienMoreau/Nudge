@@ -1,6 +1,7 @@
 package com.nudge.repository;
 
 import com.nudge.dto.EmailDTO;
+import com.nudge.model.ReadStatus;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.*;
 import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
@@ -26,12 +27,14 @@ public class DashboardRepository {
     private static final String METRICS = """
         WITH metrics AS (
           SELECT te.id, te.subject, te.recipient_email, te.tracking_id, te.created_at, te.archived_at,
-            count(e.id) FILTER (WHERE e.type = 'OPEN') AS opens,
-            count(e.id) FILTER (WHERE e.type = 'CLICK') AS clicks,
-            max(e.timestamp) FILTER (WHERE e.type = 'OPEN') AS last_open,
-            max(e.timestamp) FILTER (WHERE e.type = 'CLICK') AS last_click
+            count(e.id) FILTER (WHERE e.type = 'OPEN' AND NOT e.suspected_bot) AS opens,
+            count(e.id) FILTER (WHERE e.type = 'CLICK' AND NOT e.suspected_bot) AS clicks,
+            max(e.timestamp) FILTER (WHERE e.type = 'OPEN' AND NOT e.suspected_bot) AS last_open,
+            max(e.timestamp) FILTER (WHERE e.type = 'CLICK' AND NOT e.suspected_bot) AS last_click,
+            coalesce(bool_or(e.filter_reason IN ('APPLE_PRIVACY', 'PROTON_PRELOAD')), false) AS auto_loaded
           FROM tracked_emails te JOIN users u ON u.id = te.user_id
-          LEFT JOIN tracking_events e ON e.email_id = te.id AND e.suspected_bot = false
+          LEFT JOIN tracking_events e ON e.email_id = te.id
+            AND (e.suspected_bot = false OR e.filter_reason IN ('APPLE_PRIVACY', 'PROTON_PRELOAD'))
           WHERE u.email = :owner AND (te.archived_at IS NOT NULL) = :archived
           GROUP BY te.id
         ), scored AS (
@@ -51,7 +54,8 @@ public class DashboardRepository {
             "subject", "lower(subject)", "recipientEmail", "lower(recipient_email)",
             "createdAt", "created_at", "archivedAt", "archived_at", "openCount", "opens",
             "clickCount", "clicks", "lastOpenedAt", "last_open", "leadScore", "score",
-            "status", "CASE WHEN opens = 0 THEN 'Not Opened' WHEN opens = 1 THEN 'Opened' ELSE 'Opened Multiple Times' END");
+            "lastActivityAt", "greatest(last_open, last_click)",
+            "status", "CASE WHEN opens > 1 THEN 3 WHEN opens = 1 OR clicks > 0 THEN 2 WHEN auto_loaded THEN 1 ELSE 0 END");
 
     public Page<EmailDTO> list(String owner, boolean archived, String search, String sort, boolean ascending, Pageable page) {
         String column = SORTS.get(sort);
@@ -74,7 +78,7 @@ public class DashboardRepository {
             dto.setLastOpenedAt(rs.getObject("last_open", LocalDateTime.class));
             dto.setLastClickedAt(rs.getObject("last_click", LocalDateTime.class));
             dto.setLeadScore(rs.getInt("score"));
-            dto.setStatus(dto.getOpenCount() == 0 ? "Not Opened" : dto.getOpenCount() == 1 ? "Opened" : "Opened Multiple Times");
+            dto.setStatus(ReadStatus.of(dto.getOpenCount(), dto.getClickCount(), rs.getBoolean("auto_loaded")));
             dto.setTrackingPixelUrl(baseUrl + "/track/open/" + dto.getTrackingId());
             dto.setClickTrackingBaseUrl(baseUrl + "/track/click/" + dto.getTrackingId() + "?url=");
             return dto;
@@ -84,7 +88,8 @@ public class DashboardRepository {
 
     public Map<String, Object> stats(String owner) {
         return jdbc.queryForMap(METRICS + """
-            SELECT count(*) AS total, count(*) FILTER (WHERE opens > 0) AS opened,
+            SELECT count(*) AS total, count(*) FILTER (WHERE opens > 0 OR clicks > 0) AS opened,
+              count(*) FILTER (WHERE opens = 0 AND clicks = 0 AND auto_loaded) AS unconfirmed,
               count(*) FILTER (WHERE score >= 70) AS hot, coalesce(round(avg(score)), 0) AS average
             FROM scored
             """, parameters(owner, false));

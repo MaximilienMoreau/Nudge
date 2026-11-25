@@ -23,6 +23,7 @@ import org.springframework.web.client.RestClient;
 
 import java.time.DayOfWeek;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.format.TextStyle;
 import java.util.List;
 import java.util.Locale;
@@ -259,7 +260,8 @@ public class AIService {
      * (GROUP BY day, hour) instead of loading every event into JVM memory.
      */
     @Transactional(readOnly = true)
-    public SendTimeResponse suggestSendTime(String userEmail) {
+    public SendTimeResponse suggestSendTime(String userEmail, String requestedZone) {
+        String timeZone = requestedZone != null && ZoneId.getAvailableZoneIds().contains(requestedZone) ? requestedZone : "UTC";
         long totalOpens = eventRepo.countOpensByUserEmail(userEmail);
 
         if (totalOpens == 0) {
@@ -269,7 +271,7 @@ public class AIService {
             );
         }
 
-        List<Object[]> rows = eventRepo.findBestSendSlot(userEmail);
+        List<Object[]> rows = eventRepo.findBestSendSlot(userEmail, timeZone);
         if (rows.isEmpty()) {
             return new SendTimeResponse("Insufficient data", null, null, "Not enough data", false);
         }

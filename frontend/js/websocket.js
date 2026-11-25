@@ -61,20 +61,16 @@ function onError(err) {
 // ── Notification handler ──────────────────────────────────────
 
 async function handleNotification(notification) {
-  const { type, emailId, subject, recipientEmail, openCount, leadScore } = notification;
+  const { type, subject, recipientEmail, openCount } = notification;
 
   if (type === 'EMAIL_OPENED' || type === 'EMAIL_CLICKED') {
-    const isHot = leadScore >= HOT_LEAD_THRESHOLD;
-    const title = type === 'EMAIL_CLICKED'
-      ? '🔗 Link Clicked'
-      : isHot ? '🔥 Hot Lead!' : '📬 Email Opened';
-    const msg = type === 'EMAIL_CLICKED'
-      ? `Link in "${subject}" clicked by ${recipientEmail} (score: ${leadScore})`
-      : `"${subject}" opened by ${recipientEmail} (${openCount}x, score: ${leadScore})`;
+    const clicked = type === 'EMAIL_CLICKED';
+    const title = clicked ? '🔗 Link Clicked' : '📬 Email Opened';
+    const msg = clicked
+      ? `Link in "${subject}" clicked by ${recipientEmail}`
+      : `"${subject}" opened by ${recipientEmail} (${openCount}x)`;
 
-    if (typeof showToast === 'function') {
-      showToast(title, msg, isHot ? 'success' : 'info');
-    }
+    if (typeof showToast === 'function') showToast(title, msg, 'success');
 
     if (typeof updateEmailRow === 'function') updateEmailRow();
   }

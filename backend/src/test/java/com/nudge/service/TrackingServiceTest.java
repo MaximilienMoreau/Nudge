@@ -2,6 +2,7 @@ package com.nudge.service;
 
 import com.nudge.dto.NotificationDTO;
 import com.nudge.model.EventType;
+import com.nudge.model.FilterReason;
 import com.nudge.model.TrackedEmail;
 import com.nudge.model.TrackingEvent;
 import com.nudge.model.User;
@@ -65,7 +66,7 @@ class TrackingServiceTest {
     @Test
     void recordOpen_returnsTrue_whenEmailFound() {
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
-        when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
+        when(botDetectionService.classifyOpen(any(), any(), any())).thenReturn(null);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN)).thenReturn(1L);
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.CLICK)).thenReturn(0L);
@@ -86,7 +87,7 @@ class TrackingServiceTest {
     @Test
     void recordOpen_P4_doesNotLoadAllEvents() {
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
-        when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
+        when(botDetectionService.classifyOpen(any(), any(), any())).thenReturn(null);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), any())).thenReturn(1L);
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.CLICK))).thenReturn(0L);
@@ -102,7 +103,7 @@ class TrackingServiceTest {
     @Test
     void recordOpen_firesNotification_withOpenedType() {
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
-        when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
+        when(botDetectionService.classifyOpen(any(), any(), any())).thenReturn(null);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.OPEN)).thenReturn(2L);
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(email, EventType.CLICK)).thenReturn(0L);
@@ -121,7 +122,7 @@ class TrackingServiceTest {
     @Test
     void recordOpen_BD_persistsBotEventWithFlag() {
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
-        when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(true);
+        when(botDetectionService.classifyOpen(any(), any(), any())).thenReturn(FilterReason.SCANNER);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         boolean result = service.recordOpen("test-uuid", new MockHttpServletRequest());
@@ -130,12 +131,13 @@ class TrackingServiceTest {
         ArgumentCaptor<TrackingEvent> captor = ArgumentCaptor.forClass(TrackingEvent.class);
         verify(eventRepo).save(captor.capture());
         assertThat(captor.getValue().isSuspectedBot()).isTrue();
+        assertThat(captor.getValue().getFilterReason()).isEqualTo(FilterReason.SCANNER);
     }
 
     @Test
     void recordOpen_BD_doesNotFireNotification_forBotOpen() {
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
-        when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(true);
+        when(botDetectionService.classifyOpen(any(), any(), any())).thenReturn(FilterReason.SCANNER);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.recordOpen("test-uuid", new MockHttpServletRequest());
@@ -146,7 +148,7 @@ class TrackingServiceTest {
     @Test
     void recordOpen_BD_doesNotComputeScore_forBotOpen() {
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
-        when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(true);
+        when(botDetectionService.classifyOpen(any(), any(), any())).thenReturn(FilterReason.SCANNER);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
         service.recordOpen("test-uuid", new MockHttpServletRequest());
@@ -223,7 +225,7 @@ class TrackingServiceTest {
         request.addHeader("X-Forwarded-For", "10.0.0.1");
 
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
-        when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
+        when(botDetectionService.classifyOpen(any(), any(), any())).thenReturn(null);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), any())).thenReturn(1L);
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.CLICK))).thenReturn(0L);
@@ -247,7 +249,7 @@ class TrackingServiceTest {
         request.addHeader("X-Forwarded-For", "9.9.9.9");
 
         when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
-        when(botDetectionService.isSuspectedBot(any(), any())).thenReturn(false);
+        when(botDetectionService.classifyOpen(any(), any(), any())).thenReturn(null);
         when(eventRepo.save(any())).thenAnswer(inv -> inv.getArgument(0));
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), any())).thenReturn(1L);
         when(eventRepo.countByEmailAndTypeAndSuspectedBotFalse(any(), eq(EventType.CLICK))).thenReturn(0L);
@@ -270,4 +272,45 @@ class TrackingServiceTest {
         verifyNoInteractions(notificationService, leadScoringService);
     }
 
+    // ── Sender's own pixel load ───────────────────────────────────────────────
+
+    private static final String SENDER_IP = "203.0.113.7";
+    private static final String SENDER_UA = "Mozilla/5.0 (X11; Linux x86_64) Chrome/130.0.0.0 Safari/537.36";
+
+    private TrackingEvent openAfter(long secondsSinceRegistration, String ip, String userAgent) {
+        email.setCreatedAt(LocalDateTime.now().minusSeconds(secondsSinceRegistration));
+        email.setSenderIp(SENDER_IP);
+        email.setSenderUserAgent(SENDER_UA);
+        when(emailRepo.findByTrackingId("test-uuid")).thenReturn(Optional.of(email));
+        MockHttpServletRequest request = new MockHttpServletRequest();
+        request.setRemoteAddr(ip);
+        request.addHeader("User-Agent", userAgent);
+        service.recordOpen("test-uuid", request);
+        ArgumentCaptor<TrackingEvent> captor = ArgumentCaptor.forClass(TrackingEvent.class);
+        verify(eventRepo).save(captor.capture());
+        return captor.getValue();
+    }
+
+    @Test
+    void senderLoadingOwnPixelWhileComposingIsNotARead() {
+        assertThat(openAfter(2, SENDER_IP, SENDER_UA).getFilterReason()).isEqualTo(FilterReason.SENDER);
+        // Must not reach the timing heuristic, or the recipient's first open would be hidden.
+        verifyNoInteractions(botDetectionService, notificationService, leadScoringService);
+    }
+
+    @Test
+    void recipientOnAnotherNetworkIsCounted() {
+        assertThat(openAfter(2, "198.51.100.9", SENDER_UA).isSuspectedBot()).isFalse();
+        verify(notificationService).notifyUser(any(), any());
+    }
+
+    @Test
+    void recipientSharingTheSenderNetworkWithAnotherBrowserIsCounted() {
+        assertThat(openAfter(2, SENDER_IP, "Mozilla/5.0 (iPhone) Safari").isSuspectedBot()).isFalse();
+    }
+
+    @Test
+    void colleagueWithSameNetworkAndBrowserIsCountedAfterTheWindow() {
+        assertThat(openAfter(TrackingService.SENDER_WINDOW.toSeconds() + 5, SENDER_IP, SENDER_UA).isSuspectedBot()).isFalse();
+    }
 }

@@ -74,7 +74,9 @@ public class AuthService {
         User user = userRepository.findByEmail(request.getEmail())
                 .orElseThrow(() -> new IllegalArgumentException("User not found"));
 
-        String token = jwtUtil.generateToken(user.getId(), user.getEmail(), user.getTokenVersion());
+        String token = request.isRememberMe()
+                ? jwtUtil.generateRememberedToken(user.getId(), user.getEmail(), user.getTokenVersion())
+                : jwtUtil.generateToken(user.getId(), user.getEmail(), user.getTokenVersion());
         log.info("User logged in: {}", user.getEmail());
         return new AuthResponse(token, user.getEmail(), user.getId(), user.getCreatedAt());
     }

@@ -7,6 +7,7 @@
   <script>if(localStorage.getItem('nudge_theme')==='light')document.documentElement.setAttribute('data-theme','light');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="icon" type="image/svg+xml" href="images/favicon.svg"/>
   <link rel="stylesheet" href="css/style.css"/>
   <style>
     #pw-strength {
@@ -31,7 +32,7 @@
       </div>
       <div style="flex:1">
         <h1>Nudge</h1>
-        <p>AI-powered email intelligence</p>
+        <p>Know when your emails are read</p>
       </div>
       <button id="theme-toggle-btn" onclick="toggleTheme()"
               style="background:none;border:none;cursor:pointer;color:var(--muted);padding:6px;line-height:1;border-radius:6px;transition:color .2s;font-size:1rem"
@@ -55,6 +56,8 @@
       </div>
       <div id="login-error" style="color:var(--danger);font-size:.85rem;margin-bottom:.75rem;display:none"></div>
       <button type="submit" class="btn btn-primary btn-block" id="login-btn">Sign In</button>
+      <button type="button" class="btn btn-ghost btn-sm btn-block" style="margin-top:.6rem" onclick="handleForgotPassword()">Forgot password?</button>
+      <div id="forgot-result" role="status" style="color:var(--muted);font-size:.85rem;margin-top:.6rem"></div>
     </form>
 
     <!-- Register Form -->

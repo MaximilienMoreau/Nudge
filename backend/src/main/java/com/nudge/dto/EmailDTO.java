@@ -37,7 +37,7 @@ public class EmailDTO {
     private int leadScore;
 
     /** Human-readable status badge */
-    private String status; // "Not Opened", "Opened", "Opened Multiple Times"
+    private String status; // see ReadStatus
 
     /** The full tracking pixel URL to embed in outgoing emails */
     private String trackingPixelUrl;

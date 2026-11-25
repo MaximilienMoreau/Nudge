@@ -59,8 +59,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // ── View switching ────────────────────────────────────────────
 
-const VIEW_TITLES = { emails: 'Email Dashboard', track: 'Track New Email', insights: 'AI Insights', archived: 'Archived Emails', settings: 'Settings' };
-const ALL_VIEWS   = ['emails', 'track', 'insights', 'archived', 'settings'];
+const VIEW_TITLES = { emails: 'Email Dashboard', track: 'Track New Email', archived: 'Archived Emails', insights: 'Insights', settings: 'Settings' };
+const ALL_VIEWS   = ['emails', 'track', 'archived', 'insights', 'settings'];
 
 function showView(name) {
   ALL_VIEWS.forEach(v => {
@@ -70,7 +70,7 @@ function showView(name) {
   document.querySelectorAll('.nav-item').forEach((el, i) => {
     el.classList.toggle('active', ALL_VIEWS[i] === name);
   });
-  if (name === 'insights')  loadSendTime();
+  if (name === 'insights')  { loadEngagement(); loadSendTime(); }
   if (name === 'archived')  loadArchivedEmails();
   if (name === 'settings')  loadSettingsView();
 }
@@ -80,7 +80,7 @@ function showView(name) {
 async function loadEmails(page = 0) {
   const tbody = document.getElementById('emails-tbody');
   const requestId = ++listRequest;
-  tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state"><div class="spinner"></div></div></td></tr>`;
+  tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="spinner"></div></div></td></tr>`;
 
   try {
     const params = new URLSearchParams({ page, size: 50, search: searchQuery,
@@ -102,7 +102,7 @@ async function loadEmails(page = 0) {
     await updateStats();
   } catch (err) {
     if (requestId !== listRequest) return;
-    tbody.innerHTML = `<tr><td colspan="9"><div class="empty-state">
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
       <div class="empty-icon">⚠️</div>
       <h3>Could not load emails</h3>
       <p>${escHtml(err.message)}</p>
@@ -177,49 +177,43 @@ function renderEmailTable(emails) {
   const tbody = document.getElementById('emails-tbody');
 
   if (emails.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="9">
+    tbody.innerHTML = `<tr><td colspan="8">
       <div class="empty-state">
         <div class="empty-icon">📭</div>
         <h3>No tracked emails yet</h3>
-        <p style="color:var(--muted)">Click <strong>+ Track Email</strong> to get started.</p>
+        <p style="color:var(--muted)">Click <strong>Track Email</strong> to get started.</p>
       </div>
     </td></tr>`;
     return;
   }
 
-  tbody.innerHTML = emails.map(email => {
-    const isHot     = email.leadScore >= HOT_LEAD_THRESHOLD;
-    const hotBadge  = isHot ? ' 🔥' : '';
-
-    return `
-    <tr class="${isHot ? 'hot-lead' : ''}" data-email-id="${email.id}">
+  tbody.innerHTML = emails.map(email => `
+    <tr data-email-id="${email.id}">
+      <td style="white-space:nowrap">${statusBadge(email.status)}</td>
       <td>
-        <div style="font-weight:600;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+        <div style="font-weight:600;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
              title="${escHtml(email.subject)}">
-          ${escHtml(email.subject)}${hotBadge}
+          ${escHtml(email.subject)}
         </div>
       </td>
       <td style="color:var(--muted)">${escHtml(email.recipientEmail)}</td>
       <td style="color:var(--muted);white-space:nowrap">${formatDate(email.createdAt)}</td>
-      <td>${statusBadge(email.status)}</td>
-      <td>${scoreBar(email.leadScore)}</td>
       <td style="color:var(--muted);white-space:nowrap">${email.lastOpenedAt ? formatDate(email.lastOpenedAt) : '—'}</td>
+      <td style="color:var(--muted);text-align:center">${email.openCount || '—'}</td>
       <td style="color:var(--muted);text-align:center">
         ${email.clickCount > 0
           ? `<span title="Last clicked: ${email.lastClickedAt ? formatDate(email.lastClickedAt) : '—'}">🔗 ${email.clickCount}</span>`
           : '—'}
       </td>
-      <td>
-        <button class="btn btn-sm btn-secondary" onclick="openFollowUpModal(${email.id})">
-          🤖 Follow Up
-        </button>
-      </td>
-      <td>
+      <td style="white-space:nowrap;text-align:right">
+        <button class="btn btn-sm btn-ghost" title="Opens and clicks, counted or not"
+                onclick="openHistory(${email.id})">History</button>
+        <button class="btn btn-sm btn-ghost" title="Draft a follow-up with AI"
+                onclick="openFollowUpModal(${email.id})">Follow up</button>
         <button class="btn btn-sm btn-ghost" title="Archive email"
                 onclick="archiveEmail(${email.id})">🗑</button>
       </td>
-    </tr>`;
-  }).join('');
+    </tr>`).join('');
 }
 
 // ── Targeted row update from WebSocket ────────────────────
@@ -236,25 +230,51 @@ async function updateStats() {
     const response = await authFetch('/api/emails/stats');
     if (!response.ok) throw new Error('Statistics unavailable');
     const stats = await response.json();
-    document.getElementById('stat-total').textContent = stats.total;
-    document.getElementById('stat-opened').textContent = stats.opened;
-    document.getElementById('stat-hot').textContent = stats.hot;
-    document.getElementById('stat-avg-score').textContent = stats.average;
+    const values = {
+      'total': stats.total, 'opened': stats.opened, 'unconfirmed': stats.unconfirmed,
+      'not-opened': stats.total - stats.opened - stats.unconfirmed,
+      'hot': stats.hot, 'avg-score': stats.average
+    };
+    for (const [id, value] of Object.entries(values)) document.getElementById(`stat-${id}`).textContent = value;
   } catch {
-    for (const id of ['total', 'opened', 'hot', 'avg-score']) {
+    for (const id of ['total', 'opened', 'not-opened', 'unconfirmed', 'hot', 'avg-score']) {
       document.getElementById(`stat-${id}`).textContent = '—';
     }
   }
 }
 
-// ── AI Insights: Send-time ────────────────────────────────────
+// ── Insights: engagement ──────────────────────────────────────
+
+async function loadEngagement() {
+  const tbody = document.getElementById('engagement-tbody');
+  const message = text => { tbody.innerHTML = `<tr><td colspan="3" style="color:var(--muted)">${escHtml(text)}</td></tr>`; };
+  try {
+    const res = await authFetch('/api/emails?sort=leadScore&size=10');
+    if (!res.ok) throw new Error('Could not load engagement');
+    const emails = (await res.json()).content.filter(email => email.leadScore > 0);
+    if (emails.length === 0) { message('No open or click yet.'); return; }
+    tbody.innerHTML = emails.map(email => `
+      <tr class="${email.leadScore >= HOT_LEAD_THRESHOLD ? 'hot-lead' : ''}">
+        <td style="font-weight:600">${escHtml(email.subject)}${email.leadScore >= HOT_LEAD_THRESHOLD ? ' 🔥' : ''}</td>
+        <td style="color:var(--muted)">${escHtml(email.recipientEmail)}</td>
+        <td>${scoreBar(email.leadScore)}</td>
+      </tr>`).join('');
+  } catch (err) {
+    message(err.message);
+  }
+}
+
+// ── Insights: send time ────────────────────────────────────
 
 async function loadSendTime() {
   const body = document.getElementById('send-time-body');
   body.innerHTML = `<div class="empty-state"><div class="spinner"></div></div>`;
 
   try {
-    const res  = await authFetch('/api/ai/send-time', { method: 'POST' });
+    const res  = await authFetch('/api/ai/send-time', {
+      method: 'POST',
+      body: JSON.stringify({ timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone })
+    });
     if (!res.ok) throw new Error(`Backend error ${res.status}`);
     const data = await res.json();
 
@@ -466,6 +486,44 @@ async function permanentDeleteEmail(emailId) {
   }
 }
 
+// ── History ───────────────────────────────────────────────────
+
+const IGNORED_REASONS = {
+  SCANNER:        'mail scanner',
+  RAPID_REFETCH:  'same image loaded twice within 30 seconds',
+  APPLE_PRIVACY:  'loaded automatically by Apple Mail',
+  PROTON_PRELOAD: 'loaded automatically by Proton Mail',
+  SENDER:         'your own browser',
+  OTHER:          'automatic loading'
+};
+
+async function openHistory(emailId) {
+  const email = allEmails.find(e => e.id === emailId);
+  const body  = document.getElementById('history-body');
+  document.getElementById('history-title').textContent = email ? `History — ${email.subject}` : 'History';
+  document.getElementById('history-modal').style.display = 'flex';
+  body.innerHTML = '<div class="empty-state"><div class="spinner"></div></div>';
+  try {
+    const res = await authFetch(`/api/emails/${emailId}/events`);
+    if (!res.ok) throw new Error('Could not load the history');
+    const events = await res.json();
+    if (events.length === 0) {
+      body.innerHTML = '<p style="color:var(--muted)">No open or click detected yet.</p>';
+      return;
+    }
+    body.innerHTML = events.map(event => `
+      <div style="display:flex;gap:.75rem;padding:.5rem 0;border-bottom:1px solid var(--border);${event.counted ? '' : 'color:var(--muted)'}">
+        <span style="white-space:nowrap">${serverDate(event.at).toLocaleString()}</span>
+        <span style="flex:1">
+          ${event.type === 'CLICK' ? 'Link clicked' : 'Image loaded'} — ${escHtml(event.source)}
+          ${event.counted ? '' : `<br><small>Not counted: ${escHtml(IGNORED_REASONS[event.reason] ?? event.reason)}</small>`}
+        </span>
+      </div>`).join('');
+  } catch (err) {
+    body.innerHTML = `<p style="color:var(--danger)">${escHtml(err.message)}</p>`;
+  }
+}
+
 // ── Follow-Up Modal ───────────────────────────────────────────
 
 function openFollowUpModal(emailId) {
@@ -473,7 +531,7 @@ function openFollowUpModal(emailId) {
   if (!followUpEmail) return;
 
   const daysSinceSent = Math.floor(
-    (Date.now() - new Date(followUpEmail.createdAt)) / (1000 * 60 * 60 * 24)
+    (Date.now() - serverDate(followUpEmail.createdAt)) / (1000 * 60 * 60 * 24)
   );
 
   document.getElementById('followup-context').innerHTML = `
@@ -506,7 +564,7 @@ async function generateFollowUp() {
   btn.innerHTML = '<span class="spinner"></span> Generating…';
 
   const daysSinceSent = Math.floor(
-    (Date.now() - new Date(followUpEmail.createdAt)) / (1000 * 60 * 60 * 24)
+    (Date.now() - serverDate(followUpEmail.createdAt)) / (1000 * 60 * 60 * 24)
   );
 
   // Only send emailId and daysSinceSent — server computes score and openCount
@@ -746,12 +804,25 @@ function showToast(title, message, type = 'info') {
 // ── Rendering helpers ─────────────────────────────────────────
 
 function statusBadge(status) {
+  // Same marks as the extension popup and the Gmail ticks
   const map = {
     'Not Opened':            'badge-gray',
+    'Unconfirmed':           'badge-purple',
     'Opened':                'badge-green',
-    'Opened Multiple Times': 'badge-orange'
+    'Opened Multiple Times': 'badge-green'
   };
-  return `<span class="badge ${map[status] || 'badge-gray'}">${escHtml(status)}</span>`;
+  const labels = {
+    'Not Opened':            '✓ Not opened',
+    'Unconfirmed':           '✓? Unconfirmed',
+    'Opened':                '✓✓ Opened',
+    'Opened Multiple Times': '✓✓ Opened'
+  };
+  const hints = {
+    'Not Opened':  'No open detected. The email may still have been read with images blocked.',
+    'Unconfirmed': 'The image was loaded automatically (Apple Mail, Proton Mail). It is impossible to tell whether the email was read.'
+  };
+  const hint = hints[status] ? ` title="${hints[status]}"` : '';
+  return `<span class="badge ${map[status] || 'badge-gray'}"${hint}>${escHtml(labels[status] ?? status)}</span>`;
 }
 
 /**
@@ -775,9 +846,14 @@ function scoreBar(rawScore) {
     </div>`;
 }
 
+/** Email dates are UTC, sent without a zone. */
+function serverDate(iso) {
+  return new Date(`${iso}Z`);
+}
+
 function formatDate(iso) {
   if (!iso) return '—';
-  const d    = new Date(iso);
+  const d    = serverDate(iso);
   const now  = new Date();
   const diff = now - d;
   const mins  = Math.floor(diff / 60000);

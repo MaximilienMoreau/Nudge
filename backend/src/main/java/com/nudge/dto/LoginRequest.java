@@ -10,4 +10,6 @@ public class LoginRequest {
     private String email;
     @NotBlank
     private String password;
+    /** Issues a long-lived bearer token and no cookie. Used by the browser extension. */
+    private boolean rememberMe;
 }
