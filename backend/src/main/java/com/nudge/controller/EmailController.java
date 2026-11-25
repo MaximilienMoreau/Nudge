@@ -2,10 +2,14 @@ package com.nudge.controller;
 
 import com.nudge.dto.EmailCreateRequest;
 import com.nudge.dto.EmailDTO;
+import com.nudge.dto.EmailEventDTO;
 import com.nudge.dto.ScheduleFollowUpRequest;
 import com.nudge.service.EmailService;
 import com.nudge.repository.DashboardRepository;
+import com.nudge.util.IpUtils;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Qualifier;
 import com.nudge.dto.EmailPageResponse;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -16,6 +20,7 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 // Note: GET /api/emails/archived is declared before /{id} so Spring MVC
 // resolves the literal path before the template — no ambiguity.
@@ -37,9 +42,13 @@ public class EmailController {
 
     private final DashboardRepository dashboard;
 
-    public EmailController(EmailService emailService, DashboardRepository dashboard) {
+    private final Set<String> trustedProxies;
+
+    public EmailController(EmailService emailService, DashboardRepository dashboard,
+                           @Qualifier("trustedProxySet") Set<String> trustedProxies) {
         this.emailService = emailService;
         this.dashboard = dashboard;
+        this.trustedProxies = trustedProxies;
     }
 
     /**
@@ -70,8 +79,10 @@ public class EmailController {
     @PostMapping
     public ResponseEntity<List<EmailDTO>> createEmail(
             @AuthenticationPrincipal UserDetails user,
-            @Valid @RequestBody EmailCreateRequest request) {
-        List<EmailDTO> created = emailService.createTrackedEmail(user.getUsername(), request);
+            @Valid @RequestBody EmailCreateRequest request,
+            HttpServletRequest http) {
+        List<EmailDTO> created = emailService.createTrackedEmail(user.getUsername(), request,
+                IpUtils.clientIp(http, trustedProxies), http.getHeader("User-Agent"));
         return ResponseEntity.ok(created);
     }
 
@@ -84,6 +95,14 @@ public class EmailController {
             @AuthenticationPrincipal UserDetails user,
             @PathVariable Long id) {
         return ResponseEntity.ok(emailService.getEmailById(id, user.getUsername()));
+    }
+
+    /** GET /api/emails/{id}/events — Latest opens and clicks, with the reason of those not counted. */
+    @GetMapping("/{id}/events")
+    public ResponseEntity<List<EmailEventDTO>> getEvents(
+            @AuthenticationPrincipal UserDetails user,
+            @PathVariable Long id) {
+        return ResponseEntity.ok(emailService.getEvents(id, user.getUsername()));
     }
 
     /**

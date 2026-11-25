@@ -2,7 +2,9 @@ package com.nudge.service;
 
 import com.nudge.dto.EmailCreateRequest;
 import com.nudge.dto.EmailDTO;
+import com.nudge.dto.EmailEventDTO;
 import com.nudge.model.EventType;
+import com.nudge.model.ReadStatus;
 import com.nudge.model.TrackedEmail;
 import com.nudge.model.TrackingEvent;
 import com.nudge.model.User;
@@ -58,7 +60,8 @@ public class EmailService {
      * @return list of EmailDTOs (one per recipient)
      */
     @Transactional
-    public List<EmailDTO> createTrackedEmail(String userEmail, EmailCreateRequest request) {
+    public List<EmailDTO> createTrackedEmail(String userEmail, EmailCreateRequest request,
+                                             String senderIp, String senderUserAgent) {
         User user = userRepo.findByEmail(userEmail)
                 .orElseThrow(() -> new IllegalArgumentException("User not found: " + userEmail));
 
@@ -78,6 +81,8 @@ public class EmailService {
             email.setContent(encryptedContent);    // stored encrypted
             email.setRecipientEmail(recipient);
             email.setTrackingId(UUID.randomUUID().toString());
+            email.setSenderIp(senderIp);
+            email.setSenderUserAgent(storableUserAgent(senderUserAgent));
             emailRepo.save(email);
 
             log.info("Created tracked email '{}' for user {} → {}", email.getSubject(), userEmail, recipient);
@@ -92,6 +97,13 @@ public class EmailService {
         TrackedEmail email = findAndVerify(emailId, userEmail);
         List<TrackingEvent> events = eventRepo.findByEmailOrderByTimestampDesc(email);
         return toDTO(email, events);
+    }
+
+    /** Latest opens and clicks of an email, counted or not (validates ownership). */
+    @Transactional(readOnly = true)
+    public List<EmailEventDTO> getEvents(Long emailId, String userEmail) {
+        return eventRepo.findTop200ByEmailOrderByTimestampDesc(findAndVerify(emailId, userEmail))
+                .stream().map(EmailEventDTO::of).toList();
     }
 
     /**
@@ -178,17 +190,17 @@ public class EmailService {
         dto.setClickCount(clickCount);
         dto.setLastClickedAt(lastClickedAt);
         dto.setLeadScore(score);
-        dto.setStatus(resolveStatus(openCount));
+        dto.setStatus(ReadStatus.of(openCount, clickCount,
+                events.stream().anyMatch(e -> e.getFilterReason() != null && e.getFilterReason().isAutomaticLoad())));
         dto.setTrackingPixelUrl(buildPixelUrl(email.getTrackingId()));
         dto.setClickTrackingBaseUrl(buildClickBaseUrl(email.getTrackingId()));
 
         return dto;
     }
 
-    private String resolveStatus(int openCount) {
-        if (openCount == 0) return "Not Opened";
-        if (openCount == 1) return "Opened";
-        return "Opened Multiple Times";
+    /** An over-long User-Agent is dropped: it only disables the sender check. */
+    private static String storableUserAgent(String userAgent) {
+        return userAgent != null && userAgent.length() <= 512 ? userAgent : null;
     }
 
     private String buildPixelUrl(String trackingId) {

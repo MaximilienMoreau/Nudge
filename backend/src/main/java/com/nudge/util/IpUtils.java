@@ -1,5 +1,9 @@
 package com.nudge.util;
 
+import jakarta.servlet.http.HttpServletRequest;
+
+import java.util.Set;
+
 /**
  * Utility methods for IP address / CIDR range matching.
  *
@@ -19,6 +23,19 @@ package com.nudge.util;
 public final class IpUtils {
 
     private IpUtils() {}
+
+    /**
+     * Client IP of a request. X-Forwarded-For is only used when the direct
+     * connection comes from one of the trusted proxy ranges.
+     */
+    public static String clientIp(HttpServletRequest request, Set<String> trustedProxies) {
+        String remoteAddr = request.getRemoteAddr();
+        if (remoteAddr == null || trustedProxies.stream().noneMatch(range -> matches(remoteAddr, range))) {
+            return remoteAddr;
+        }
+        String forwarded = request.getHeader("X-Forwarded-For");
+        return forwarded == null || forwarded.isBlank() ? remoteAddr : forwarded.split(",")[0].trim();
+    }
 
     /**
      * Returns {@code true} when {@code ip} falls within {@code cidrOrExact}.

@@ -35,7 +35,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * The doFilter logic stays identical — only the bucket factory changes.
  *
  * X-Forwarded-For is only trusted when the direct connection originates from a
- *     configured trusted proxy range — same logic as TrackingService.extractIp().
+ *     configured trusted proxy range — see IpUtils.clientIp().
  *     Without this check an attacker could spoof their IP to bypass rate limiting.
  */
 @Component
@@ -85,10 +85,13 @@ public class RateLimitFilter implements Filter {
         int    limit;
 
         if ("POST".equals(method) && path.equals("/api/auth/login")) {
-            key   = "login:"    + getClientIp(request);
+            key   = "login:"    + IpUtils.clientIp(request, trustedProxies);
             limit = LOGIN_LIMIT;
         } else if ("POST".equals(method) && path.equals("/api/auth/register")) {
-            key   = "register:" + getClientIp(request);
+            key   = "register:" + IpUtils.clientIp(request, trustedProxies);
+            limit = REGISTER_LIMIT;
+        } else if ("POST".equals(method) && (path.equals("/api/auth/forgot-password") || path.equals("/api/auth/reset-password"))) {
+            key   = "reset:"    + IpUtils.clientIp(request, trustedProxies);
             limit = REGISTER_LIMIT;
         } else if ("GET".equals(method) && path.startsWith("/track/open/")) {
             // Key on the tracking ID itself — not the caller IP — to prevent open-count inflation
@@ -138,29 +141,5 @@ public class RateLimitFilter implements Filter {
         buckets.entrySet().removeIf(e -> e.getValue().lastUsedMs < cutoff);
         int removed = before - buckets.size();
         if (removed > 0) log.debug("RateLimitFilter evicted {} expired entries", removed);
-    }
-
-    /**
-     * Only trust X-Forwarded-For when the direct connection comes from a
-     * configured trusted proxy range. Mirrors TrackingService.extractIp() so
-     * the two are consistent and neither can be trivially bypassed by IP spoofing.
-     */
-    private String getClientIp(HttpServletRequest request) {
-        String remoteAddr = request.getRemoteAddr();
-        if (isTrustedProxy(remoteAddr)) {
-            String xff = request.getHeader("X-Forwarded-For");
-            if (xff != null && !xff.isBlank()) {
-                return xff.split(",")[0].trim();
-            }
-        }
-        return remoteAddr;
-    }
-
-    private boolean isTrustedProxy(String ip) {
-        if (ip == null) return false;
-        for (String trusted : trustedProxies) {
-            if (IpUtils.matches(ip, trusted)) return true;
-        }
-        return false;
     }
 }

@@ -20,6 +20,7 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 /**
@@ -160,7 +161,7 @@ class EmailServiceTest {
         request.setContent("body");
         request.setRecipientEmails(List.of("a@example.com", "b@example.com"));
 
-        List<EmailDTO> created = emailService.createTrackedEmail(owner.getEmail(), request);
+        List<EmailDTO> created = emailService.createTrackedEmail(owner.getEmail(), request, "203.0.113.7", "Browser");
 
         assertThat(created).hasSize(2);
         assertThat(created).extracting(EmailDTO::getRecipientEmail)
@@ -180,8 +181,22 @@ class EmailServiceTest {
         request.setContent("body");
         request.setRecipientEmails(List.of("a@example.com", "b@example.com"));
 
-        List<EmailDTO> created = emailService.createTrackedEmail(owner.getEmail(), request);
+        List<EmailDTO> created = emailService.createTrackedEmail(owner.getEmail(), request, "203.0.113.7", "Browser");
 
         assertThat(created.get(0).getTrackingId()).isNotEqualTo(created.get(1).getTrackingId());
+    }
+
+    @Test
+    void createTrackedEmail_remembersWhoRegisteredIt() {
+        when(userRepo.findByEmail(owner.getEmail())).thenReturn(Optional.of(owner));
+        EmailCreateRequest request = new EmailCreateRequest();
+        request.setSubject("Hello");
+        request.setRecipientEmail("a@example.com");
+
+        emailService.createTrackedEmail(owner.getEmail(), request, "203.0.113.7", "Browser");
+        emailService.createTrackedEmail(owner.getEmail(), request, "203.0.113.7", "x".repeat(513));
+
+        verify(emailRepo).save(argThat(e -> "203.0.113.7".equals(e.getSenderIp()) && "Browser".equals(e.getSenderUserAgent())));
+        verify(emailRepo).save(argThat(e -> e.getSenderUserAgent() == null));
     }
 }

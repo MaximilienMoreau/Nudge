@@ -1,5 +1,6 @@
 package com.nudge.service;
 
+import com.nudge.model.FilterReason;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -7,24 +8,25 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Detects bot/proxy opens to prevent inflated lead scores.
+ * Decides whether a pixel load can be counted as a read.
  *
- * Two complementary heuristics run in order:
+ * Image proxies that fetch when the recipient displays the email (Gmail's
+ * GoogleImageProxy, YahooMailProxy) and mail apps (Outlook mobile) are reads:
+ * filtering them would make those recipients look as if they never read anything.
  *
- *   1. User-Agent pattern match — identifies known mail scanners, security
- *      gateways, and image proxies (Apple MPP, Google Image Proxy, MS Exchange
- *      Safe Links, Proofpoint, Mimecast, etc.) that pre-fetch tracking pixels
- *      before the human ever opens the email.
+ * Not counted:
+ *   1. Scanners and security gateways, identified by User-Agent.
+ *   2. Apple Mail Privacy Protection, whose fetches do not depend on the recipient
+ *      reading. It only announces itself with a bare "Mozilla/5.0".
+ *   3. Emails sent to a Proton address, whose images are loaded on reception.
+ *   4. A second load of the same pixel within PREFETCH_WINDOW_MS. The first load
+ *      is never flagged by this rule.
  *
- *   2. Rapid-succession timing — two opens on the same tracking ID within
- *      PREFETCH_WINDOW_MS are almost always a server-side pre-fetch cycle.
- *      The first open is never flagged; only subsequent ones within the window.
- *
- * Flagged events are persisted with suspectedBot = true and excluded from
- * lead-score computation and real-time notifications.
+ * Filtered events are persisted and excluded from scores and notifications.
  */
 @Service
 public class BotDetectionService {
@@ -35,11 +37,8 @@ public class BotDetectionService {
     static final long PREFETCH_WINDOW_MS = 30_000L;
 
     private static final List<String> BOT_UA_PATTERNS = List.of(
-        "googleimageproxy",
         "googlebot",
         "bingbot",
-        "outlook-ios",
-        "outlookandroid",
         "mimecast",
         "proofpoint",
         "barracuda",
@@ -50,25 +49,41 @@ public class BotDetectionService {
         "apple-pubsub"
     );
 
+    private static final Set<String> PROTON_DOMAINS =
+        Set.of("proton.me", "protonmail.com", "protonmail.ch", "pm.me");
+
     /** trackingId → ms timestamp of most recent open */
     private final Map<String, Long> lastOpenTs = new ConcurrentHashMap<>();
 
     /**
-     * Returns true when the open looks like a bot/proxy load.
+     * Returns why an open must not be counted as a read, or null when it counts.
      *
      * @param userAgent   User-Agent header value (may be null)
      * @param trackingId  UUID identifying the tracked email
+     * @param recipient   address the email was sent to (may be null)
      */
-    public boolean isSuspectedBot(String userAgent, String trackingId) {
-        if (matchesKnownBot(userAgent)) {
-            log.debug("Bot UA detected for trackingId={}: ua={}", trackingId, userAgent);
-            return true;
-        }
-        if (isRapidSuccession(trackingId)) {
-            log.debug("Rapid-succession open detected for trackingId={}", trackingId);
-            return true;
-        }
-        return false;
+    public FilterReason classifyOpen(String userAgent, String trackingId, String recipient) {
+        if (matchesKnownBot(userAgent))       return FilterReason.SCANNER;
+        if (isApplePrivacyProxy(userAgent))   return FilterReason.APPLE_PRIVACY;
+        if (isProtonMailbox(recipient))       return FilterReason.PROTON_PRELOAD;
+        // Checked last so that filtered loads never hide a genuine open that follows.
+        if (isRapidSuccession(trackingId))    return FilterReason.RAPID_REFETCH;
+        return null;
+    }
+
+    /**
+     * Proton loads the images of incoming emails on reception, through a proxy with no
+     * documented User-Agent, so the recipient's domain is the only clue. Custom domains
+     * hosted by Proton cannot be recognised.
+     */
+    private static boolean isProtonMailbox(String recipient) {
+        if (recipient == null) return false;
+        String domain = recipient.substring(recipient.lastIndexOf('@') + 1).trim().toLowerCase(java.util.Locale.ROOT);
+        return PROTON_DOMAINS.contains(domain);
+    }
+
+    private static boolean isApplePrivacyProxy(String userAgent) {
+        return userAgent != null && userAgent.trim().equals("Mozilla/5.0");
     }
 
     public boolean matchesKnownBot(String userAgent) {

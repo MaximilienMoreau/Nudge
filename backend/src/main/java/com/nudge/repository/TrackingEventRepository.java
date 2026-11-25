@@ -16,6 +16,9 @@ public interface TrackingEventRepository extends JpaRepository<TrackingEvent, Lo
     /** All events for a given email, ordered by time. */
     List<TrackingEvent> findByEmailOrderByTimestampDesc(TrackedEmail email);
 
+    /** Latest events of an email, for its history. */
+    List<TrackingEvent> findTop200ByEmailOrderByTimestampDesc(TrackedEmail email);
+
     /**
      * Batch-fetch all events for a list of emails in one query.
      * Eliminates the N+1 problem in EmailService.getEmailsForUser.
@@ -47,11 +50,13 @@ public interface TrackingEventRepository extends JpaRepository<TrackingEvent, Lo
      *   col[1] hour       — hour of day 0-23
      *   col[2] openCount  — number of opens in that slot
      *
+     * Events are stored in UTC and counted in the given IANA time zone.
+     *
      * Note: uses CAST(... AS INT) instead of ::INT — Spring JPA interprets ::x as a named parameter.
      */
     @Query(value = """
-        SELECT CAST(EXTRACT(ISODOW FROM e.timestamp) AS INT),
-               CAST(EXTRACT(HOUR  FROM e.timestamp) AS INT),
+        SELECT CAST(EXTRACT(ISODOW FROM (e.timestamp AT TIME ZONE 'UTC') AT TIME ZONE :timeZone) AS INT),
+               CAST(EXTRACT(HOUR  FROM (e.timestamp AT TIME ZONE 'UTC') AT TIME ZONE :timeZone) AS INT),
                COUNT(*)
         FROM tracking_events e
         JOIN tracked_emails  te ON te.id = e.email_id
@@ -63,7 +68,7 @@ public interface TrackingEventRepository extends JpaRepository<TrackingEvent, Lo
         ORDER BY 3 DESC, 1 ASC, 2 ASC
         LIMIT 1
         """, nativeQuery = true)
-    List<Object[]> findBestSendSlot(@Param("userEmail") String userEmail);
+    List<Object[]> findBestSendSlot(@Param("userEmail") String userEmail, @Param("timeZone") String timeZone);
 
     /**
      * Count genuine OPEN events for a user (used by AIService to decide

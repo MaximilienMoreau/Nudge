@@ -29,6 +29,7 @@ class JwtUtilTest {
         jwtUtil = new JwtUtil();
         ReflectionTestUtils.setField(jwtUtil, "secret", SECRET);
         ReflectionTestUtils.setField(jwtUtil, "expirationMs", 3_600_000L);
+        ReflectionTestUtils.setField(jwtUtil, "rememberExpirationMs", 2_592_000_000L);
         ReflectionTestUtils.invokeMethod(jwtUtil, "init");
     }
 
@@ -38,6 +39,15 @@ class JwtUtilTest {
 
         assertThat(jwtUtil.extractEmail(token)).isEqualTo("user@example.com");
         assertThat(jwtUtil.extractUserId(token)).isEqualTo(42L);
+        assertThat(jwtUtil.extractTokenVersion(token)).isEqualTo(3);
+    }
+
+    @Test
+    void rememberedTokenLastsThirtyDaysAndKeepsTheTokenVersion() {
+        String token = jwtUtil.generateRememberedToken(42L, "user@example.com", 3);
+
+        Date in29Days = new Date(System.currentTimeMillis() + 29L * 86_400_000);
+        assertThat(jwtUtil.extractClaims(token).getExpiration()).isAfter(in29Days);
         assertThat(jwtUtil.extractTokenVersion(token)).isEqualTo(3);
     }
 

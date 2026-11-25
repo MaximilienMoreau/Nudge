@@ -219,7 +219,7 @@ class TrackingRepositoryIT {
         saveEvent(EventType.OPEN, false);
         saveEvent(EventType.OPEN, false);
 
-        List<Object[]> slots = eventRepo.findBestSendSlot(user.getEmail());
+        List<Object[]> slots = eventRepo.findBestSendSlot(user.getEmail(), "UTC");
 
         assertThat(slots).hasSize(1);
         Object[] row = slots.get(0);
@@ -235,7 +235,7 @@ class TrackingRepositoryIT {
 
     @Test
     void findBestSendSlot_returnsEmpty_whenNoOpenEvents() {
-        List<Object[]> slots = eventRepo.findBestSendSlot(user.getEmail());
+        List<Object[]> slots = eventRepo.findBestSendSlot(user.getEmail(), "UTC");
 
         assertThat(slots).isEmpty();
     }

@@ -2,6 +2,7 @@ package com.nudge.controller;
 
 import com.nudge.dto.FollowUpRequest;
 import com.nudge.dto.FollowUpResponse;
+import com.nudge.dto.SendTimeRequest;
 import com.nudge.dto.SendTimeResponse;
 import com.nudge.service.AIService;
 import jakarta.validation.Valid;
@@ -43,11 +44,13 @@ public class AIController {
      * POST /api/ai/send-time
      *
      * Analyses historical open events and returns the best day × hour to send.
-     * No request body required — user identity comes from the JWT.
+     * The optional body carries the time zone of the answer (UTC by default).
      */
     @PostMapping("/send-time")
     public ResponseEntity<SendTimeResponse> suggestSendTime(
+            @RequestBody(required = false) SendTimeRequest request,
             @AuthenticationPrincipal UserDetails principal) {
-        return ResponseEntity.ok(aiService.suggestSendTime(principal.getUsername()));
+        return ResponseEntity.ok(aiService.suggestSendTime(principal.getUsername(),
+                request == null ? null : request.timeZone()));
     }
 }

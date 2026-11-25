@@ -48,10 +48,21 @@ public class TrackingEvent {
     private String userAgent;
 
     /**
-     * True when this event was classified as a bot/proxy pre-fetch by
-     * BotDetectionService. Suspected-bot events are persisted for audit
+     * True when this event is not counted as a read (see filterReason).
+     * Such events are persisted for audit
      * purposes but excluded from lead-score computation and notifications.
      */
     @Column(nullable = false)
     private boolean suspectedBot = false;
+
+    /** Why the event is not counted as a read; null when it is counted. */
+    @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "varchar(32)") // no generated CHECK: reasons may be added
+    private FilterReason filterReason;
+
+    /** Keeps the reason and the suspectedBot flag used by queries in step. */
+    public void filterAs(FilterReason reason) {
+        this.filterReason = reason;
+        this.suspectedBot = reason != null;
+    }
 }

@@ -49,6 +49,7 @@ class ApplicationIT {
     @Autowired com.nudge.service.NotificationService notifications;
     @Autowired com.nudge.repository.TrackingEventRepository events;
     final HttpClient http = HttpClient.newHttpClient();
+    static final java.util.concurrent.atomic.AtomicInteger registrations = new java.util.concurrent.atomic.AtomicInteger();
 
     HttpResponse<String> request(String path, String method, String body, String cookie, String origin) throws Exception {
         var builder = HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
@@ -59,8 +60,12 @@ class ApplicationIT {
     }
 
     String register(String address) throws Exception {
-        var result = request("/api/auth/register", "POST", json.writeValueAsString(Map.of(
-                "email", address, "password", "StrongPassword1!")), null, "https://dashboard.example");
+        // Own address each time: registrations are rate-limited per IP.
+        var result = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/auth/register"))
+                .header("Content-Type", "application/json").header("Origin", "https://dashboard.example")
+                .header("X-Forwarded-For", "198.51.100." + (100 + registrations.incrementAndGet()))
+                .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of(
+                        "email", address, "password", "StrongPassword1!")))).build(), HttpResponse.BodyHandlers.ofString());
         assertThat(result.statusCode()).isEqualTo(200);
         return result.headers().firstValue("set-cookie").orElseThrow().split(";", 2)[0];
     }
@@ -69,6 +74,9 @@ class ApplicationIT {
     void healthAndPackagedDashboardArePublicButAccountChangesRequireAuthentication() throws Exception {
         assertThat(request("/actuator/health", "GET", "", null, null).statusCode()).isEqualTo(200);
         assertThat(request("/index.html", "GET", "", null, null).body()).contains("Nudge");
+        assertThat(request("/images/favicon.svg", "GET", "", null, null).statusCode()).isEqualTo(200);
+        assertThat(request("/favicon.ico", "GET", "", null, null).statusCode()).isEqualTo(404);
+        assertThat(request("/api/auth/login", "GET", "", null, null).statusCode()).isEqualTo(405);
         assertThat(request("/api/auth/password", "PUT", "{}", null, null).statusCode()).isEqualTo(401);
     }
 
@@ -87,6 +95,31 @@ class ApplicationIT {
         assertThat(request("/api/auth/logout", "POST", "", newCookie, null).statusCode()).isEqualTo(403);
         assertThat(request("/api/auth/logout", "POST", "", newCookie, "https://dashboard.example").statusCode()).isEqualTo(200);
         assertThat(request("/api/emails", "GET", "", newCookie, null).statusCode()).isEqualTo(401);
+    }
+
+    @Test
+    void rememberedSessionSetsNoCookieAndIsRevokedByPasswordChange() throws Exception {
+        String address = "remember-" + UUID.randomUUID() + "@example.com";
+        String cookie = register(address);
+        // Own address: the login rate limit is per IP and another test exhausts the shared one.
+        var login = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/auth/login"))
+                .header("Content-Type", "application/json").header("X-Forwarded-For", "198.51.100.20")
+                .POST(HttpRequest.BodyPublishers.ofString(json.writeValueAsString(Map.of(
+                        "email", address, "password", "StrongPassword1!", "rememberMe", true)))).build(),
+                HttpResponse.BodyHandlers.ofString());
+        assertThat(login.statusCode()).isEqualTo(200);
+        assertThat(login.headers().firstValue("set-cookie")).isEmpty();
+        String token = json.readTree(login.body()).get("token").asString();
+        assertThat(withBearer(token)).isEqualTo(200);
+        assertThat(request("/api/auth/password", "PUT",
+                "{\"currentPassword\":\"StrongPassword1!\",\"newPassword\":\"NewStrongPassword2!\"}",
+                cookie, "https://dashboard.example").statusCode()).isEqualTo(200);
+        assertThat(withBearer(token)).isEqualTo(401);
+    }
+
+    int withBearer(String token) throws Exception {
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/emails"))
+                .header("Authorization", "Bearer " + token).build(), HttpResponse.BodyHandlers.ofString()).statusCode();
     }
 
     @Test
@@ -111,14 +144,106 @@ class ApplicationIT {
         assertThat(dto.getClickCount()).isEqualTo(1);
         assertThat(dto.getContent()).isNull();
         assertThat(events.countOpensByUserEmail(owner)).isEqualTo(4);
-        assertThat(((Number) events.findBestSendSlot(owner).get(0)[2]).intValue()).isEqualTo(4);
+        assertThat(((Number) events.findBestSendSlot(owner, "UTC").get(0)[2]).intValue()).isEqualTo(4);
         assertThat(dto.getLeadScore()).isEqualTo(scoring.computeScore(4, 1, lastOpen));
         var stats = dashboard.stats(owner);
         assertThat(((Number) stats.get("total")).intValue()).isEqualTo(55);
         assertThat(((Number) stats.get("opened")).intValue()).isEqualTo(1);
         assertThat(dashboard.list("other@example.com", false, "", "createdAt", false, PageRequest.of(0, 50))).isEmpty();
         assertThat(dashboard.list(owner, false, "", "createdAt", false, PageRequest.of(1, 50)).getContent()).hasSize(5);
+
+        Long clickedOnly = jdbc.queryForObject("SELECT id FROM tracked_emails WHERE user_id = ? AND subject = 'Mail 7'", Long.class, userId);
+        jdbc.update("INSERT INTO tracking_events(email_id,type,timestamp) VALUES (?, 'CLICK', ?)", clickedOnly, lastOpen.plusHours(1));
+        assertThat(dashboard.list(owner, false, "", "lastActivityAt", false, PageRequest.of(0, 2)).getContent())
+                .extracting(com.nudge.dto.EmailDTO::getId).containsExactly(clickedOnly, target);
     }
+    HttpResponse<String> load(String pixelUrl, String userAgent) throws Exception {
+        String path = URI.create(pixelUrl).getPath();
+        return http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + path))
+                .header("User-Agent", userAgent).build(), HttpResponse.BodyHandlers.ofString());
+    }
+
+    @Test
+    void readStatusIgnoresSenderAndAppleButCountsGmail() throws Exception {
+        String owner = "read-" + UUID.randomUUID() + "@example.com";
+        String cookie = register(owner);
+        var created = http.send(HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/emails"))
+                .header("Content-Type", "application/json").header("Cookie", cookie)
+                .header("Origin", "https://dashboard.example").header("User-Agent", "SenderBrowser")
+                .POST(HttpRequest.BodyPublishers.ofString("{\"subject\":\"Hi\",\"content\":\"x\",\"recipientEmail\":\"c@example.com\"}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+        assertThat(created.statusCode()).isEqualTo(200);
+        var dto = json.readTree(created.body()).get(0);
+        String pixel = dto.get("trackingPixelUrl").asString();
+        String detail = "/api/emails/" + dto.get("id").asLong();
+
+        load(pixel, "SenderBrowser");
+        assertThat(status(owner, detail, cookie)).isEqualTo("Not Opened");
+        load(pixel, "Mozilla/5.0");
+        assertThat(status(owner, detail, cookie)).isEqualTo("Unconfirmed");
+        assertThat(((Number) dashboard.stats(owner).get("opened")).intValue()).isZero();
+        assertThat(((Number) dashboard.stats(owner).get("unconfirmed")).intValue()).isEqualTo(1);
+        load(pixel, "Mozilla/5.0 (Windows NT 5.1; rv:11.0) Gecko Firefox/11.0 (via ggpht.com GoogleImageProxy)");
+        assertThat(status(owner, detail, cookie)).isEqualTo("Opened");
+        assertThat(((Number) dashboard.stats(owner).get("opened")).intValue()).isEqualTo(1);
+        assertThat(((Number) dashboard.stats(owner).get("unconfirmed")).intValue()).isZero();
+    }
+
+    @Test
+    void openFromProtonMailboxIsUnconfirmed() throws Exception {
+        String owner = "proton-" + UUID.randomUUID() + "@example.com";
+        String cookie = register(owner);
+        var created = request("/api/emails", "POST", "{\"subject\":\"Hi\",\"content\":\"x\",\"recipientEmail\":\"c@proton.me\"}", cookie, "https://dashboard.example");
+        var dto = json.readTree(created.body()).get(0);
+        load(dto.get("trackingPixelUrl").asString(), "Mozilla/5.0 (Windows NT 10.0) Chrome/130.0.0.0");
+        assertThat(status(owner, "/api/emails/" + dto.get("id").asLong(), cookie)).isEqualTo("Unconfirmed");
+    }
+
+    @Test
+    void historyShowsCountedAndIgnoredOpensToTheirOwnerOnly() throws Exception {
+        String cookie = register("history-" + UUID.randomUUID() + "@example.com");
+        var created = request("/api/emails", "POST", "{\"subject\":\"Hi\",\"recipientEmail\":\"c@example.com\"}", cookie, "https://dashboard.example");
+        var dto = json.readTree(created.body()).get(0);
+        load(dto.get("trackingPixelUrl").asString(), "Mozilla/5.0");
+        load(dto.get("trackingPixelUrl").asString(), "GoogleImageProxy");
+        String path = "/api/emails/" + dto.get("id").asLong() + "/events";
+        var events = json.readTree(request(path, "GET", "", cookie, null).body());
+        assertThat(events.size()).isEqualTo(2);
+        assertThat(events.get(0).get("counted").asBoolean()).isTrue();
+        assertThat(events.get(0).get("source").asString()).isEqualTo("Gmail");
+        assertThat(events.get(1).get("reason").asString()).isEqualTo("APPLE_PRIVACY");
+        assertThat(LocalDateTime.parse(events.get(0).get("at").asString()))
+                .isCloseTo(LocalDateTime.now(java.time.ZoneOffset.UTC), within(1, java.time.temporal.ChronoUnit.MINUTES));
+        assertThat(events.toString()).doesNotContain("127.0.0.1");
+        String other = register("other-" + UUID.randomUUID() + "@example.com");
+        assertThat(request(path, "GET", "", other, null).statusCode()).isEqualTo(403);
+    }
+
+    @Test
+    void passwordResetIsPublicButUnavailableWithoutEmail() throws Exception {
+        assertThat(request("/api/auth/forgot-password", "POST", "{\"email\":\"a@example.com\"}", null, null).statusCode()).isEqualTo(503);
+        assertThat(request("/api/auth/reset-password", "POST", "{\"token\":\"x\",\"newPassword\":\"StrongPassword1!\"}", null, null).statusCode()).isEqualTo(400);
+        assertThat(request("/reset.html", "GET", "", null, null).statusCode()).isEqualTo(200);
+    }
+
+    @Test
+    void bestSendTimeUsesTheRequestedTimeZone() throws Exception {
+        String owner = "zone-" + UUID.randomUUID() + "@example.com";
+        String cookie = register(owner);
+        Long userId = jdbc.queryForObject("SELECT id FROM users WHERE email = ?", Long.class, owner);
+        Long email = jdbc.queryForObject("INSERT INTO tracked_emails(user_id,subject,tracking_id) VALUES (?, 's', ?) RETURNING id", Long.class, userId, UUID.randomUUID().toString());
+        jdbc.update("INSERT INTO tracking_events(email_id,type,timestamp) VALUES (?, 'OPEN', TIMESTAMP '2026-01-05 23:30')", email); // Monday, UTC
+        assertThat(request("/api/ai/send-time", "POST", "{\"timeZone\":\"Europe/Paris\"}", cookie, "https://dashboard.example").body()).contains("Tuesday at 12:00 AM");
+        assertThat(request("/api/ai/send-time", "POST", "{\"timeZone\":\"nonsense\"}", cookie, "https://dashboard.example").body()).contains("Monday at 11:00 PM");
+    }
+
+    /** The detail view and the list compute the status separately: they must agree. */
+    String status(String owner, String detail, String cookie) throws Exception {
+        String listed = dashboard.list(owner, false, "", "status", false, PageRequest.of(0, 5)).getContent().get(0).getStatus();
+        assertThat(json.readTree(request(detail, "GET", "", cookie, null).body()).get("status").asString()).isEqualTo(listed);
+        return listed;
+    }
+
     @Test
     void liveWebSocketAuthenticatesAndStopsDeliveringAfterLogout() throws Exception {
         String owner = "socket-" + UUID.randomUUID() + "@example.com";

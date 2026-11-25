@@ -7,6 +7,7 @@
   <script>if(localStorage.getItem('nudge_theme')==='light')document.documentElement.setAttribute('data-theme','light');</script>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="icon" type="image/svg+xml" href="images/favicon.svg"/>
   <link rel="stylesheet" href="css/style.css"/>
   <style>
     .score-wrap   { display:flex;align-items:center;gap:.35rem;cursor:help }
@@ -56,14 +57,6 @@
         </svg>
         Track Email
       </div>
-      <div class="nav-item" onclick="showView('insights');closeSidebar()">
-        <!-- sparkles -->
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
-          <path d="M5 3v4M19 17v4M3 5h4M17 19h4"/>
-        </svg>
-        AI Insights
-      </div>
       <div class="nav-item" onclick="showView('archived');closeSidebar()">
         <!-- archive -->
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -71,6 +64,14 @@
           <path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/>
         </svg>
         Archived
+      </div>
+      <div class="nav-item" onclick="showView('insights');closeSidebar()">
+        <!-- sparkles -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+          <path d="M5 3v4M19 17v4M3 5h4M17 19h4"/>
+        </svg>
+        Insights
       </div>
       <div class="nav-item" onclick="showView('settings');closeSidebar()">
         <!-- settings / sliders -->
@@ -131,19 +132,19 @@
       <div class="stats-row">
         <div class="stat-card">
           <div class="stat-label">Total Tracked</div>
-          <div class="stat-value purple" id="stat-total">—</div>
+          <div class="stat-value" id="stat-total">—</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label" title="Estimated from image loads; privacy proxies and blocked images affect accuracy">Detected Opens</div>
+          <div class="stat-label" title="Estimated from image loads; privacy proxies and blocked images affect accuracy">Opened</div>
           <div class="stat-value green" id="stat-opened">—</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Hot Leads</div>
-          <div class="stat-value yellow" id="stat-hot">—</div>
+          <div class="stat-label" title="No open detected. Some may have been read with images blocked">Not Opened</div>
+          <div class="stat-value" id="stat-not-opened">—</div>
         </div>
         <div class="stat-card">
-          <div class="stat-label">Avg Score</div>
-          <div class="stat-value" id="stat-avg-score">—</div>
+          <div class="stat-label" title="Apple Mail and Proton Mail load images automatically: impossible to tell whether these were read">Unconfirmed</div>
+          <div class="stat-value purple" id="stat-unconfirmed">—</div>
         </div>
       </div>
 
@@ -160,20 +161,19 @@
           <table>
             <thead>
               <tr>
+                <th data-sort="status">Status</th>
                 <th data-sort="subject">Subject</th>
                 <th data-sort="recipientEmail">Recipient</th>
                 <th data-sort="createdAt">Sent</th>
-                <th data-sort="status">Status</th>
-                <th data-sort="leadScore" title="Estimated engagement (0–100): opens, recency, frequency and clicks">Score ℹ</th>
                 <th data-sort="lastOpenedAt">Last Opened</th>
+                <th data-sort="openCount">Opens</th>
                 <th data-sort="clickCount">Clicks</th>
-                <th>Actions</th>
                 <th></th>
               </tr>
             </thead>
             <tbody id="emails-tbody">
               <tr>
-                <td colspan="9">
+                <td colspan="8">
                   <div class="empty-state">
                     <div class="empty-icon">📬</div>
                     <h3>Loading emails…</h3>
@@ -242,8 +242,31 @@
       </div>
     </div>
 
-    <!-- ── AI Insights view ──────────────────────────────────── -->
+    <!-- ── Insights view ──────────────────────────────────── -->
     <div class="content" id="view-insights" style="display:none">
+      <div class="card" style="margin-bottom:1.25rem">
+        <div class="card-header">
+          <span class="card-title">Engagement</span>
+          <span style="color:var(--muted);font-size:.8rem">
+            Hot leads: <strong id="stat-hot">—</strong> · Average score: <strong id="stat-avg-score">—</strong>
+          </span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Subject</th>
+                <th>Recipient</th>
+                <th title="Estimated engagement (0–100): opens, recency, frequency and clicks">Score</th>
+              </tr>
+            </thead>
+            <tbody id="engagement-tbody">
+              <tr><td colspan="3"><div class="empty-state"><div class="spinner"></div></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <div class="grid-2-lg">
 
       <div class="card" style="margin-bottom:0">
@@ -273,15 +296,20 @@
               <tr>
                 <td style="padding:.5rem">Gmail</td>
                 <td style="padding:.5rem"><span class="badge badge-green">✅ Sidebar</span></td>
-                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel + Link</span></td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
               </tr>
               <tr>
                 <td style="padding:.5rem">Outlook Web</td>
                 <td style="padding:.5rem"><span class="badge badge-green">✅ Sidebar</span></td>
-                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel + Link</span></td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
               </tr>
               <tr>
                 <td style="padding:.5rem">Proton Mail</td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Sidebar</span></td>
+                <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
+              </tr>
+              <tr>
+                <td style="padding:.5rem">Tuta</td>
                 <td style="padding:.5rem"><span class="badge badge-green">✅ Sidebar</span></td>
                 <td style="padding:.5rem"><span class="badge badge-green">✅ Pixel</span></td>
               </tr>
@@ -444,6 +472,17 @@
         Create Pixel
       </button>
     </div>
+  </div>
+</div>
+
+<!-- ── History Modal ────────────────────────────────────────── -->
+<div class="modal-overlay" id="history-modal" style="display:none" onclick="closeModalOnBg(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="history-title">History</h3>
+      <button class="modal-close" onclick="document.getElementById('history-modal').style.display='none'">✕</button>
+    </div>
+    <div class="modal-body" id="history-body" style="max-height:60vh;overflow-y:auto"></div>
   </div>
 </div>
 

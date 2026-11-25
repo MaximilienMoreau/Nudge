@@ -44,6 +44,12 @@ public class User implements UserDetails {
     @Column(nullable = false)
     private int tokenVersion = 0;
 
+    /** SHA-256 of the pending password-reset token, null when there is none. */
+    @Column(length = 64, unique = true)
+    private String resetTokenHash;
+
+    private LocalDateTime resetTokenExpiresAt;
+
     // ── UserDetails contract ─────────────────────────────────
 
     @Override

@@ -92,7 +92,8 @@ public class SecurityConfig {
             .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(auth -> auth
                 .dispatcherTypeMatchers(jakarta.servlet.DispatcherType.ERROR).permitAll()
-                .requestMatchers("/api/auth/login", "/api/auth/register", "/track/**").permitAll()
+                .requestMatchers("/api/auth/login", "/api/auth/register",
+                        "/api/auth/forgot-password", "/api/auth/reset-password", "/track/**").permitAll()
                 .requestMatchers("/ws/**", "/actuator/health", "/actuator/health/**").permitAll()
                 .requestMatchers("/", "/*.html", "/js/**", "/css/**", "/images/**", "/favicon.ico").permitAll()
                 .anyRequest().authenticated()

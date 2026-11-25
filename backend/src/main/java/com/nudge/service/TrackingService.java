@@ -2,6 +2,7 @@ package com.nudge.service;
 
 import com.nudge.dto.NotificationDTO;
 import com.nudge.model.EventType;
+import com.nudge.model.FilterReason;
 import com.nudge.model.TrackedEmail;
 import com.nudge.model.TrackingEvent;
 import com.nudge.repository.TrackedEmailRepository;
@@ -15,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.nudge.util.IpUtils;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Set;
 
@@ -36,13 +38,17 @@ import java.util.Set;
  *  X-Forwarded-For is only trusted when the request originates from a
  *      configured trusted proxy range; otherwise the raw remote address is used.
  *
- * BD:  Suspected-bot events (Apple MPP, Google Image Proxy, rapid re-fetches…)
- *      are persisted with suspectedBot = true and excluded from score/notification.
+ * BD:  Events that do not prove a read (scanners, Apple MPP, rapid re-fetches, the
+ *      sender's own browser) are persisted with a filterReason and excluded from
+ *      score/notification.
  */
 @Service
 public class TrackingService {
 
     private static final Logger log = LoggerFactory.getLogger(TrackingService.class);
+
+    /** How long after registration the sender's own pixel loads are ignored. */
+    static final Duration SENDER_WINDOW = Duration.ofMinutes(5);
 
     private final TrackedEmailRepository  emailRepo;
     private final TrackingEventRepository eventRepo;
@@ -68,9 +74,9 @@ public class TrackingService {
     /**
      * Record an OPEN event triggered by a tracking pixel load.
      *
-     * BD:  The event is classified as a suspected bot before being saved.
-     *      Bot events are stored for audit but do not contribute to the lead
-     *      score and do not trigger a WebSocket notification.
+     * BD:  The event is classified before being saved. Filtered events are stored
+     *      for audit but do not contribute to the lead score and do not trigger a
+     *      WebSocket notification.
      *
      *  Score computed from 2 COUNT queries (genuine opens only) — O(1).
      *
@@ -82,19 +88,21 @@ public class TrackingService {
     public boolean recordOpen(String trackingId, HttpServletRequest request) {
         return emailRepo.findByTrackingId(trackingId).map(email -> {
             String userAgent    = request.getHeader("User-Agent");
-            boolean isBot       = botDetectionService.isSuspectedBot(userAgent, trackingId);
+            String ip           = IpUtils.clientIp(request, trustedProxies);
+            FilterReason reason = isSenderComposing(email, ip, userAgent)
+                    ? FilterReason.SENDER
+                    : botDetectionService.classifyOpen(userAgent, trackingId, email.getRecipientEmail());
 
             TrackingEvent event = new TrackingEvent();
             event.setEmail(email);
             event.setType(EventType.OPEN);
-            event.setIpAddress(extractIp(request));
+            event.setIpAddress(ip);
             event.setUserAgent(userAgent);
-            event.setSuspectedBot(isBot);
+            event.filterAs(reason);
             eventRepo.save(event);
 
-            if (isBot) {
-                log.info("Bot open filtered (not scored) for email='{}' trackingId={}",
-                        email.getSubject(), trackingId);
+            if (reason != null) {
+                log.info("Open not counted ({}) for trackingId={}", reason, trackingId);
                 return true;
             }
 
@@ -129,9 +137,11 @@ public class TrackingService {
             TrackingEvent event = new TrackingEvent();
             event.setEmail(email);
             event.setType(EventType.CLICK);
-            event.setIpAddress(extractIp(request));
+            event.setIpAddress(IpUtils.clientIp(request, trustedProxies));
             event.setUserAgent(request.getHeader("User-Agent"));
-            event.setSuspectedBot(botDetectionService.matchesKnownBot(request.getHeader("User-Agent")));
+            if (botDetectionService.matchesKnownBot(request.getHeader("User-Agent"))) {
+                event.filterAs(FilterReason.SCANNER);
+            }
             eventRepo.save(event);
             if (event.isSuspectedBot()) return true;
 
@@ -178,25 +188,14 @@ public class TrackingService {
     }
 
     /**
-     * Extract real IP, only trusting X-Forwarded-For when the direct
-     * connection comes from a configured trusted proxy range.
+     * The sender's editor can load the pixel before the email is even sent. The
+     * extension prevents it; this covers a pixel pasted by hand. Limited to a short
+     * window because a colleague may share the sender's IP and browser version.
      */
-    private String extractIp(HttpServletRequest request) {
-        String remoteAddr = request.getRemoteAddr();
-        if (isTrustedProxy(remoteAddr)) {
-            String forwarded = request.getHeader("X-Forwarded-For");
-            if (forwarded != null && !forwarded.isBlank()) {
-                return forwarded.split(",")[0].trim();
-            }
-        }
-        return remoteAddr;
-    }
-
-    private boolean isTrustedProxy(String ip) {
-        if (ip == null) return false;
-        for (String trusted : trustedProxies) {
-            if (IpUtils.matches(ip, trusted)) return true;
-        }
-        return false;
+    private static boolean isSenderComposing(TrackedEmail email, String ip, String userAgent) {
+        return email.getCreatedAt() != null
+                && email.getCreatedAt().isAfter(LocalDateTime.now().minus(SENDER_WINDOW))
+                && ip != null && ip.equals(email.getSenderIp())
+                && userAgent != null && userAgent.equals(email.getSenderUserAgent());
     }
 }
